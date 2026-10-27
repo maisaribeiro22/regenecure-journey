@@ -69,18 +69,17 @@ Na plataforma: **Configurações → Criar templates no WhatsApp**. São criados
 | `lembrete_followup` | Utility | Lembrete de follow-up (manual ou automático, 1 dia antes) |
 | `codigo_acesso` | Authentication | Código de 6 dígitos para o cliente entrar |
 | `followup_confirmacao` | Utility | Lembrete automático 1 dia antes do follow-up, com botão para confirmar presença ou pedir remarcação |
-| `lembrete_peptideo` | Utility | Lembrete diário nos dias de aplicação, no horário escolhido pelo cliente |
 
 ## Lembretes automáticos
 
 Uma função roda a cada hora e usa o fuso horário de cada cliente (capturado do celular dele; padrão Brasília para português e Dubai para inglês):
 
 - **Follow-up**: às 10:00 do dia anterior à consulta (variável `FOLLOWUP_REMINDER_HOUR` para mudar o horário). O botão leva direto à etapa de follow-up, onde o cliente confirma presença ou pede remarcação. A resposta aparece na lista de clientes e na ficha.
-- **Peptídeos**: o cliente ativa na etapa 3 e escolhe o horário (05:00–22:00). A mensagem lista os peptídeos e doses do dia; nos dias sem aplicação, nada é enviado. Você também pode ativar ou desativar pela ficha do cliente.
+- **Peptídeos** (notificação no celular, sem WhatsApp): o cliente ativa na etapa 3 e escolhe o horário (05:00–22:00). Nos dias de aplicação, recebe uma notificação com os peptídeos e doses do dia; tocar nela abre as doses do dia no painel. Android: funciona direto no navegador. iPhone (iOS 16.4+): exige adicionar o painel à Tela de Início — o painel mostra o passo a passo. Alternativa sem instalação: botão "Adicionar lembretes (.ics)", que cria eventos recorrentes com alarme no calendário do celular.
 
 Ambos podem ser desligados para todos os clientes em Configurações.
 
-Projetos criados antes desta versão: rode `supabase/migrations/002_alerts.sql` no SQL Editor.
+Projetos criados antes destas versões: rode, no SQL Editor, `supabase/migrations/002_alerts.sql` e `supabase/migrations/003_push.sql`. As chaves das notificações (VAPID) são geradas automaticamente no primeiro uso e ficam guardadas no banco, sem configuração extra.
 
 Se preferir criar no painel do Kapso: categoria e nomes iguais aos da tabela, parâmetros nomeados `{{name}}` e `{{date}}`, botão de URL `https://jornada.regenecure.com/c/{{1}}`. Textos em `netlify/lib/server.mjs` → `templateDefinitions()`.
 

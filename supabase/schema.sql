@@ -223,3 +223,25 @@ create policy reports_admin_delete on storage.objects
 alter table public.app_settings add column if not exists peptide_alerts boolean not null default true;
 alter table public.clients add column if not exists tz text;
 alter table public.clients add column if not exists last_pep_alert date;
+
+-- ---------------------------------------------------------------------
+-- v3 (Oct 2026): phone notifications (Web Push). Server-only tables.
+-- ---------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  endpoint   text primary key,
+  client_id  uuid not null references public.clients(id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now(),
+  user_agent text
+);
+create index if not exists push_subscriptions_client_idx on public.push_subscriptions (client_id);
+create table if not exists public.server_keys (
+  name       text primary key,
+  value      jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.push_subscriptions enable row level security;
+alter table public.server_keys        enable row level security;
+revoke all on public.push_subscriptions, public.server_keys from anon, authenticated;
+grant all on public.push_subscriptions, public.server_keys to service_role;

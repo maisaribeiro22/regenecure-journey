@@ -198,7 +198,10 @@ Object.assign(I18N.pt, {
   cl_previewBanner:'Pré-visualização da profissional — as marcações não são salvas.', cl_report:'Baixar laudo', cl_offline:'Sem conexão. A marcação não foi salva.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
   pepAlertTitle:'Lembrete diário dos peptídeos no WhatsApp', pepAlertDesc:'Receba uma mensagem nos dias de aplicação, no horário escolhido.', pepAlertTime:'Horário', pepAlertOn:'Ativo · {h}', pepAlertOff:'Desativado pelo cliente', pepAlertSaved:'Lembrete diário ativado para {h}.', pepAlertDisabled:'Lembrete diário desativado.',
   attAsk:'Você confirma a sua presença neste follow-up?', attConfirmBtn:'Confirmar presença', attRescheduleBtn:'Preciso remarcar', attDoneConfirmed:'Presença confirmada. Obrigado.', attDoneReschedule:'Pedido de remarcação registrado. A equipe RegeneCure entrará em contato.',
-  attConfirmed:'Presença confirmada', attReschedule:'Pediu remarcação', attWaiting:'Aguardando confirmação do cliente', peptideAlertsGlobal:'Lembretes diários de peptídeos no WhatsApp (para clientes com o lembrete ativo)'
+  attConfirmed:'Presença confirmada', attReschedule:'Pediu remarcação', attWaiting:'Aguardando confirmação do cliente',
+  pepSchedule:'Cronograma diário dos peptídeos', pushTitle:'Lembrete diário no celular', pushDesc:'Receba uma notificação nos dias de aplicação, no horário escolhido.', pushOnDesc:'Ativo neste aparelho. Aviso às {h} nos dias de aplicação.', pushDevices:'{n} aparelho(s)',
+  pepIcs:'Prefere o calendário do celular? Adicionar lembretes (.ics)', pushUnsupported:'Este navegador não permite notificações. Use os lembretes no calendário.', pushDenied:'As notificações foram bloqueadas. Libere nas configurações do navegador e tente de novo.', pushOff:'Lembrete diário desativado.', pushFail:'Não foi possível ativar as notificações agora. Tente novamente.',
+  iosTitle:'Ativar notificações no iPhone', iosStep1:'Toque em Compartilhar (o quadrado com a seta para cima) na barra do Safari.', iosStep2:'Escolha Adicionar à Tela de Início e confirme.', iosStep3:'Abra o painel pelo novo ícone RegeneCure na Tela de Início.', iosStep4:'Entre com o código do WhatsApp e ative o lembrete na etapa Peptídeos.', iosNote:'É uma exigência da Apple: notificações de sites só funcionam a partir da Tela de Início (iOS 16.4 ou mais recente). Se preferir, use os lembretes no calendário.', iosOk:'Entendi', peptideAlertsGlobal:'Lembretes diários de peptídeos por notificação no celular (para clientes com o lembrete ativo)'
 });
 Object.assign(I18N.en, {
   privacy:'The file is kept in the project\'s private storage (Supabase). In AI mode, it is sent to the Anthropic API for extraction.',
@@ -221,7 +224,10 @@ Object.assign(I18N.en, {
   cl_previewBanner:'Practitioner preview — ticks are not saved.', cl_report:'Download report', cl_offline:'No connection. The tick was not saved.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
   pepAlertTitle:'Daily peptide reminder on WhatsApp', pepAlertDesc:'Get a message on dosing days, at the time you choose.', pepAlertTime:'Time', pepAlertOn:'Active · {h}', pepAlertOff:'Turned off by the client', pepAlertSaved:'Daily reminder on for {h}.', pepAlertDisabled:'Daily reminder turned off.',
   attAsk:'Do you confirm your attendance at this follow-up?', attConfirmBtn:'Confirm attendance', attRescheduleBtn:'I need to reschedule', attDoneConfirmed:'Attendance confirmed. Thank you.', attDoneReschedule:'Reschedule request recorded. The RegeneCure team will contact you.',
-  attConfirmed:'Attendance confirmed', attReschedule:'Asked to reschedule', attWaiting:'Waiting for the client to confirm', peptideAlertsGlobal:'Daily peptide reminders on WhatsApp (for clients with the reminder on)'
+  attConfirmed:'Attendance confirmed', attReschedule:'Asked to reschedule', attWaiting:'Waiting for the client to confirm',
+  pepSchedule:'Daily peptide schedule', pushTitle:'Daily reminder on your phone', pushDesc:'Get a notification on dosing days, at the time you choose.', pushOnDesc:'On for this device. Reminder at {h} on dosing days.', pushDevices:'{n} device(s)',
+  pepIcs:'Prefer your phone calendar? Add reminders (.ics)', pushUnsupported:'This browser does not allow notifications. Use the calendar reminders.', pushDenied:'Notifications are blocked. Allow them in the browser settings and try again.', pushOff:'Daily reminder turned off.', pushFail:'Notifications could not be turned on right now. Try again.',
+  iosTitle:'Turn on notifications on iPhone', iosStep1:'Tap Share (the square with an up arrow) in the Safari bar.', iosStep2:'Choose Add to Home Screen and confirm.', iosStep3:'Open the dashboard from the new RegeneCure icon on the Home Screen.', iosStep4:'Sign in with the WhatsApp code and turn on the reminder in the Peptides stage.', iosNote:'This is an Apple requirement: website notifications only work from the Home Screen (iOS 16.4 or later). You can also use the calendar reminders.', iosOk:'Got it', peptideAlertsGlobal:'Daily peptide reminders as phone notifications (for clients with the reminder on)'
 });
 
 /* ---------- Icons ---------- */
@@ -601,9 +607,14 @@ function renderStage2(c){
       <span>${t('startD')}</span><span>${fmtDate(effStart(c,s))}</span><span>${t('duration')}</span><span>${en ? `${s.durationDays} ${t('days')} · ${fmtShort(en)}` : t('ongoing')}</span></div>
       ${s.instructions?`<p><span class="muted">${t('instructions')}:</span> ${esc(s.instructions)}</p>`:''}${s.rationale?`<p><span class="muted">${t('rationale')}:</span> ${esc(s.rationale)}</p>`:''}</div>`;
   }).join('')}</div>`;
-  const bySlot = {}; c.supplements.forEach(s => s.slots.forEach(sl => (bySlot[sl] = bySlot[sl] || []).push(s)));
-  html += `<div class="section"><h3>${t('schedule')}</h3><div class="sched">${SLOTS.filter(sl => bySlot[sl]).map(sl => `<div class="slotrow"><div class="t"><span class="mono muted">${SLOT_TIME[sl]}</span><b>${t('slot_'+sl)}</b></div><ul>${bySlot[sl].map(s => `<li><span>${esc(s.name)}${s.everyN>1||(s.days.length&&s.days.length<7)?` <span class="muted" style="font-size:12px">· ${s.everyN>1?t('everyN',{n:s.everyN}):s.days.map(d=>t('dowLong')[d]).join(', ')}</span>`:''}</span><em>${esc(s.dose)}</em></li>`).join('')}</ul></div>`).join('')}</div></div>`;
+  html += `<div class="section"><h3>${t('schedule')}</h3>${slotSchedule(c.supplements)}</div>`;
   return html;
+}
+
+function slotSchedule(items, kind){
+  const bySlot = {}; items.forEach(s => (s.slots.length ? s.slots : [kind === 'pep' ? 'wake' : 'breakfast']).forEach(sl => (bySlot[sl] = bySlot[sl] || []).push(s)));
+  const when = s => s.everyN > 1 ? t('everyN', { n:s.everyN }) : (s.days.length && s.days.length < 7) ? s.days.slice().sort((a, b) => WEEK_ORDER.indexOf(a) - WEEK_ORDER.indexOf(b)).map(d => t('dowLong')[d]).join(', ') : '';
+  return `<div class="sched">${SLOTS.filter(sl => bySlot[sl]).map(sl => `<div class="slotrow"><div class="t"><span class="mono muted">${SLOT_TIME[sl]}</span><b>${t('slot_' + sl)}</b></div><ul>${bySlot[sl].map(s => `<li><span>${esc(s.name)}${when(s) ? ` <span class="muted" style="font-size:12px">· ${when(s)}</span>` : ''}${kind === 'pep' ? ` <span class="muted" style="font-size:12px">· ${t('r_' + s.route)}</span>` : ''}</span><em>${esc(s.dose)}</em></li>`).join('')}</ul></div>`).join('')}</div>`;
 }
 
 function renderStage3(c){
@@ -624,23 +635,58 @@ function renderStage3(c){
       ${total ? `<div class="cycle"><div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${status==='sched'?t('startsIn',{n:diffDays(st,td)}):t('dayOf',{a:cur,b:total})}</span><span class="mono muted">${Math.round(cur/total*100)}%</span></div><div class="bar"><i style="width:${cur/total*100}%"></i></div></div>` : ''}
       ${p.reconstitution?`<p><span class="muted">${t('reconstitution')}:</span> ${esc(p.reconstitution)}</p>`:''}${p.instructions?`<p><span class="muted">${t('instructions')}:</span> ${esc(p.instructions)}</p>`:''}${p.rationale?`<p><span class="muted">${t('rationale')}:</span> ${esc(p.rationale)}</p>`:''}</div>`;
   }).join('')}</div>`;
+  const activePeps = c.peptides.filter(p => pepStatus(c, p) !== 'done');
+  html += `<div class="section"><h3>${t('pepSchedule')}</h3>${slotSchedule(activePeps.length ? activePeps : c.peptides, 'pep')}</div>`;
   html += `<div class="section"><h3>${t('cycles')}</h3>${renderGantt(c)}</div>`;
   return html;
 }
 
 function renderPepAlert(c){
   const pa = c.pepAlert || { on:false, hour:8 };
-  const can = canWrite() || isAdmin();
+  const can = canWrite();
   const hours = []; for(let h = 5; h <= 22; h++) hours.push(h);
   const sel = `<select data-action="pep-hour" ${can ? '' : 'disabled'}>${hours.map(h => `<option value="${h}" ${(pa.hour ?? 8) === h ? 'selected' : ''}>${pad(h)}:00</option>`).join('')}</select>`;
-  const sub = isAdmin() ? (pa.on ? t('pepAlertOn', { h:pad(pa.hour ?? 8) + ':00' }) + (c.tz || pa.tz ? ` · ${esc(c.tz || pa.tz)}` : '') : t('pepAlertOff')) : t('pepAlertDesc');
-  return `<div class="alert-card ${pa.on ? 'on' : ''}">
+  const on = !!pa.on && pa.channel === 'push';
+  const sub = isAdmin()
+    ? (on ? t('pepAlertOn', { h:pad(pa.hour ?? 8) + ':00' }) + ` · ${t('pushDevices', { n:pa.devices || 1 })}` + (c.tz || pa.tz ? ` · ${esc(c.tz || pa.tz)}` : '') : t('pepAlertOff'))
+    : (on ? t('pushOnDesc', { h:pad(pa.hour ?? 8) + ':00' }) : t('pushDesc'));
+  return `<div class="alert-card ${on ? 'on' : ''}">
     <div class="ac-ic">${ic('bell')}</div>
-    <div class="ac-txt"><b>${t('pepAlertTitle')}</b><span class="muted">${sub}</span></div>
+    <div class="ac-txt"><b>${t('pushTitle')}</b><span class="muted">${sub}</span></div>
     <div class="ac-ctl"><label class="pa-hour">${t('pepAlertTime')} ${sel}</label>
-      <button class="switch ${pa.on ? 'on' : ''}" data-action="pep-toggle" role="switch" aria-checked="${pa.on ? 'true' : 'false'}" aria-label="${t('pepAlertTitle')}" ${can ? '' : 'disabled'}><i></i></button></div>
+      <button class="switch ${on ? 'on' : ''}" data-action="pep-toggle" role="switch" aria-checked="${on ? 'true' : 'false'}" aria-label="${t('pushTitle')}" ${can ? '' : 'disabled'}><i></i></button></div>
+    ${isAdmin() ? '' : `<div class="ac-foot"><button class="linkbtn" data-action="pep-ics" ${APP.mode === 'preview' ? 'disabled' : ''}>${ic('calendar')}${t('pepIcs')}</button></div>`}
   </div>`;
 }
+
+/* Recurring calendar reminders for peptides (works on any phone, no installation) */
+function buildPeptideICS(c){
+  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const BY = ['SU','MO','TU','WE','TH','FR','SA'];
+  const ev = [];
+  c.peptides.forEach(p => {
+    const st = effStart(c, p), en = effEnd(c, p, 'pep');
+    if(en && en < todayISO()) return;
+    let first = st > todayISO() ? st : todayISO();
+    for(let i = 0; i < 60 && !scheduledOn(c, p, 'pep', first); i++) first = addDays(first, 1);
+    if(!scheduledOn(c, p, 'pep', first)) return;
+    let rule;
+    if(p.everyN > 1){ const off = ((diffDays(first, st) % p.everyN) + p.everyN) % p.everyN; if(off) first = addDays(first, p.everyN - off); rule = `FREQ=DAILY;INTERVAL=${p.everyN}`; }
+    else if(p.days && p.days.length && p.days.length < 7) rule = `FREQ=WEEKLY;BYDAY=${p.days.map(d => BY[d]).join(',')}`;
+    else rule = 'FREQ=DAILY';
+    if(en) rule += `;UNTIL=${en.replace(/-/g, '')}T235959`;
+    (p.slots.length ? p.slots : ['wake']).forEach(sl => {
+      const [hh, mm] = SLOT_TIME[sl].split(':'); const d = first.replace(/-/g, '');
+      const end = (+hh) * 60 + (+mm) + 15;
+      const title = `${p.name} · ${p.dose || ''}`.trim();
+      ev.push(['BEGIN:VEVENT', `UID:${c.id}-${p.id}-${sl}@regenecure-journey`, `DTSTAMP:${now}`, `DTSTART:${d}T${hh}${mm}00`, `DTEND:${d}T${pad(Math.floor(end / 60) % 24)}${pad(end % 60)}00`, `RRULE:${rule}`,
+        `SUMMARY:${icsEscape('RegeneCure · ' + title)}`, `DESCRIPTION:${icsEscape(`${t('r_' + p.route)} · ${t('slot_' + sl)}${p.instructions ? '\n' + p.instructions : ''}`)}`,
+        'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:PT0M', `DESCRIPTION:${icsEscape(title)}`, 'END:VALARM', 'END:VEVENT'].join('\r\n'));
+    });
+  });
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//RegeneCure//Client Journey//EN', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:RegeneCure · ${t('peptides')}`, ...ev, 'END:VCALENDAR'].join('\r\n');
+}
+
 function attendanceChip(c, n){
   const s = c.fuConfirm?.[n]?.status;
   if(s === 'confirmed') return `<span class="chip normal">${t('attConfirmed')}</span>`;

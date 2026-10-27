@@ -132,7 +132,7 @@ function pushProgress(extra){
   clearTimeout(progressTimer);
   progressTimer = setTimeout(() => {
     const fuConfirm = Object.fromEntries(Object.entries(c.fuConfirm || {}).map(([n, v]) => [n, v.status]));
-    api('progress', { confirmed:{ s2:c.confirmed.s2, s3:c.confirmed.s3, s4:c.confirmed.s4 }, seenBadges:c.seenBadges, lastLevel:c.lastLevel, fuConfirm, pepAlert:c.pepAlert, ...(extra || {}) })
+    api('progress', { confirmed:{ s2:c.confirmed.s2, s3:c.confirmed.s3, s4:c.confirmed.s4 }, seenBadges:c.seenBadges, lastLevel:c.lastLevel, fuConfirm, ...(extra || {}) })
       .catch(() => toast(t('cl_offline'), 'warn'));
   }, 400);
 }
@@ -175,12 +175,50 @@ function setAttendance(n, v){
   renderClient(); pushProgress(); afterChange();
   toast(v === 'confirmed' ? t('attDoneConfirmed') : t('attDoneReschedule'));
 }
-function setPepAlert(patch){
-  const c = C(); if(!canWrite()) return;
-  c.pepAlert = { on:false, hour:8, ...(c.pepAlert || {}), ...patch, tz:browserTz() };
-  renderClient(); pushProgress();
-  if('on' in patch) toast(c.pepAlert.on ? t('pepAlertSaved', { h:pad(c.pepAlert.hour) + ':00' }) : t('pepAlertDisabled'));
+/* ---------- Phone notifications (Web Push) ---------- */
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+function b64ToBytes(b64){ const p = '='.repeat((4 - b64.length % 4) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, ch => ch.charCodeAt(0)); }
+async function swReg(){ const reg = await navigator.serviceWorker.register('/sw.js', { scope:'/' }); await navigator.serviceWorker.ready; return reg; }
+function showIosHelp(){
+  openModal(`${modalHead(t('iosTitle'))}<div class="modal-body"><ol class="ios-steps"><li>${t('iosStep1')}</li><li>${t('iosStep2')}</li><li>${t('iosStep3')}</li><li>${t('iosStep4')}</li></ol><p class="note">${t('iosNote')}</p></div><div class="modal-foot"><button class="btn primary" data-action="close">${t('iosOk')}</button></div>`);
 }
+async function enablePush(hour){
+  const c = C();
+  if(!pushSupported()){ if(isIOS() && !isStandalone()) showIosHelp(); else toast(t('pushUnsupported'), 'warn'); return; }
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ toast(t('pushDenied'), 'warn'); return; }
+    const reg = await swReg();
+    const { publicKey } = await api('push-key');
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64ToBytes(publicKey) });
+    const r = await api('push-subscribe', { subscription:sub.toJSON(), hour, tz:browserTz() });
+    c.pepAlert = r.pepAlert; renderClient();
+    toast(t('pepAlertSaved', { h:pad(c.pepAlert.hour) + ':00' }));
+  }catch(e){ console.error(e); toast(t('pushFail'), 'warn'); }
+}
+async function disablePush(){
+  const c = C();
+  try{
+    if(pushSupported()){ const reg = await navigator.serviceWorker.getRegistration('/'); const sub = await reg?.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }
+    const r = await api('push-unsubscribe', {});      // switches the reminder off for every device
+    c.pepAlert = r.pepAlert; renderClient(); toast(t('pushOff'));
+  }catch(e){ toast(t('cl_offline'), 'warn'); }
+}
+function togglePush(){
+  if(!canWrite()) return;
+  const pa = C().pepAlert || {};
+  if(pa.on && pa.channel === 'push') disablePush(); else enablePush(pa.hour ?? 8);
+}
+function setPepHour(hour){
+  const c = C(); if(!canWrite()) return;
+  c.pepAlert = { ...(c.pepAlert || {}), hour };
+  if(c.pepAlert.on) api('progress', { pepAlert:{ hour, tz:browserTz() } }).then(() => toast(t('pepAlertSaved', { h:pad(hour) + ':00' }))).catch(() => toast(t('cl_offline'), 'warn'));
+  renderClient();
+}
+
 async function openReport(){
   try{ const r = await api('report'); window.open(r.url, '_blank', 'noopener'); }
   catch(e){ toast(t('cl_sendFail'), 'warn'); }
@@ -206,12 +244,13 @@ document.addEventListener('click', e => {
     case 'check': toggleCheck(el.dataset.key, el); break;
     case 'report-file': openReport(); break;
     case 'att': setAttendance(+el.dataset.n, el.dataset.v); break;
-    case 'pep-toggle': setPepAlert({ on:!C().pepAlert?.on }); break;
+    case 'pep-toggle': togglePush(); break;
+    case 'pep-ics': download('regenecure-peptideos.ics', buildPeptideICS(c), 'text/calendar'); break;
     case 'ics': { const n = +el.dataset.n; const f = followupDates(c).find(x => x.n === n); download(`regenecure-followup-${n}.ics`, buildICS(c, [f]), 'text/calendar'); confirmStage(4, null); break; }
     case 'ics-all': { const list = followupDates(c).filter(f => !c.followups[f.n]?.done); download('regenecure-followups.ics', buildICS(c, list), 'text/calendar'); confirmStage(4, null); break; }
   }
 });
-document.addEventListener('change', e => { if(e.target.dataset.action === 'pep-hour') setPepAlert({ hour:+e.target.value }); });
+document.addEventListener('change', e => { if(e.target.dataset.action === 'pep-hour') setPepHour(+e.target.value); });
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && modalOpen()) closeModal(); });
 setInterval(() => { const td = todayISO(); if(ui.lastToday && ui.lastToday !== td){ if(ui.day === ui.lastToday) ui.day = td; renderClient(); } ui.lastToday = td; }, 60000);
 ui.lastToday = todayISO();

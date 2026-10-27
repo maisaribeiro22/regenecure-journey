@@ -16,6 +16,7 @@ const DEFAULTS = {
   WA_TEMPLATE_FU_CONFIRM: "followup_confirmacao",
   WA_TEMPLATE_PEPTIDE: "lembrete_peptideo",
   FOLLOWUP_REMINDER_HOUR: "10",
+  VAPID_SUBJECT: "mailto:support@regenecure.com",
 };
 
 export const env = (k) => {
@@ -230,17 +231,14 @@ export function peptideDosesText(list, lang) {
   const txt = list.map((p) => `${p.name} ${p.dose || ""}`.trim() + ((p.slots || []).length ? ` (${p.slots.map((x) => L[x] || x).join(", ")})` : "")).join("; ");
   return txt.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, " ").slice(0, 900);
 }
-export async function sendPeptideReminder(c, list) {
-  return sendTemplate({
-    to: c.whatsapp, name: env("WA_TEMPLATE_PEPTIDE"), lang: c.lang,
-    components: [
-      { type: "body", parameters: [
-        { type: "text", parameter_name: "name", text: firstName(c.name) },
-        { type: "text", parameter_name: "doses", text: peptideDosesText(list, c.lang) },
-      ] },
-      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: `${c.access_token}.today` }] },
-    ],
-  });
+export function peptideNotification(c, list) {
+  const en = c.lang === "en";
+  return {
+    title: en ? "RegeneCure · Today's peptides" : "RegeneCure · Peptídeos de hoje",
+    body: peptideDosesText(list, c.lang),
+    url: `/c/${c.access_token}.today`,
+    tag: "peptides",
+  };
 }
 
 /* ---------------- Protocol schedule (server copy of the browser engine) ---------------- */
@@ -314,10 +312,6 @@ export function templateDefinitions() {
       components: [{ type: "BODY", text: s.fuConfirm, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "date", example: s.date }] } }, btnWith(s.btnConfirm)],
     });
     out.push({
-      lang, name: env("WA_TEMPLATE_PEPTIDE"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
-      components: [{ type: "BODY", text: s.peptide, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "doses", example: s.doses }] } }, btnWith(s.btnLog)],
-    });
-    out.push({
       lang, name: env("WA_TEMPLATE_OTP"), category: "AUTHENTICATION", language: waLang(lang),
       components: [
         { type: "BODY", add_security_recommendation: true },
@@ -358,7 +352,7 @@ export async function listTemplates() {
   const text = await res.text();
   if (!res.ok) throw new HttpError(502, "kapso_error", { detail: text.slice(0, 300) });
   const j = JSON.parse(text);
-  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM"), env("WA_TEMPLATE_PEPTIDE")]);
+  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM")]);
   return (j.data || []).filter((t) => wanted.has(t.name)).map((t) => ({ name: t.name, language: t.language, status: t.status, category: t.category }));
 }
 

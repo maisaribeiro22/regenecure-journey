@@ -277,15 +277,6 @@ async function openReportFile(){
   if(error || !data?.signedUrl){ toast(t('saveErr'), 'warn'); return; }
   window.open(data.signedUrl, '_blank', 'noopener');
 }
-async function setClientPepAlert(patch){
-  const c = C(); if(!c) return;
-  c.pepAlert = { on:false, hour:8, ...(c.pepAlert || {}), ...patch };
-  if(!c.pepAlert.tz) c.pepAlert.tz = c.tz || (c.lang === 'en' ? 'Asia/Dubai' : 'America/Sao_Paulo');
-  renderAdmin();
-  const { data } = await sb.from('clients').select('progress').eq('id', c.id).maybeSingle();
-  const { error } = await sb.from('clients').update({ progress:{ ...(data?.progress || {}), pepAlert:c.pepAlert } }).eq('id', c.id);
-  if(error) toast(t('saveErr'), 'warn');
-}
 function copyText(txt, okMsg){
   const done = () => toast(okMsg || t('copied'));
   if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done, () => fallbackCopy(txt, done)); else fallbackCopy(txt, done);
@@ -694,7 +685,6 @@ document.addEventListener('click', e => {
     case 'fu-done': { c.followups[+el.dataset.n] = { done:true, doneAt:new Date().toISOString() }; persist(); renderAdmin(); break; }
     case 'fu-undo': { delete c.followups[+el.dataset.n]; persist(); renderAdmin(); break; }
     case 'send-fu': sendFollowupReminder(+el.dataset.n); break;
-    case 'pep-toggle': setClientPepAlert({ on:!C().pepAlert?.on }); break;
     case 'send-journey': sendJourney(); break;
     case 'publish-only': setStatus('published').then(() => copyText(clientLink(C()), t('linkCopied'))); break;
     case 'unpublish': setStatus('draft'); break;
@@ -723,7 +713,6 @@ document.addEventListener('change', e => {
   else if(el.id === 'importIn'){ const f = el.files[0]; if(f) importBackup(f); }
   else if(el.dataset.action === 'set-mode'){ document.querySelectorAll('.radio label').forEach(l => l.classList.toggle('on', l.contains(document.querySelector('input[name=mode]:checked')))); }
   else if(el.dataset.action === 'fu-time'){ const c = C(); c.followUpTime = el.value || '10:00'; persist(); renderAdmin(); }
-  else if(el.dataset.action === 'pep-hour'){ setClientPepAlert({ hour:+el.value }); }
   else if(el.id === 'flVisible'){ const c = C(); c.fitline = { ...(c.fitline || {}), enabled:el.checked }; persist(); }
   else if(el.dataset.ed && editorDraft){ setPath(editorDraft, el.dataset.ed, el.value); }
 });

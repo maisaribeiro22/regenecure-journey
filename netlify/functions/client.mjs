@@ -4,6 +4,7 @@ import {
   handle, json, readJson, HttpError, db, dbAll, enc, hashSecret, randomToken, randomCode, safeEqual,
   sendOtp, logMessage, maskPhone, waDigits, requireAdmin, signedReportUrl, todayUTC, kapsoConfigured, validTz,
 } from "../lib/server.mjs";
+import { getVapid, validSubscription, countDevices, pushToClient } from "../lib/push.mjs";
 
 const SESSION_DAYS = 30;
 const CODE_MINUTES = 10;
@@ -131,13 +132,16 @@ const ACTIONS = {
       }
       next.fuConfirm = fc;
     }
-    // Daily peptide reminder: { on, hour (5–22), tz }
+    // Daily peptide reminder: the client may change the hour/time zone or switch it off.
+    // Switching on happens only through push-subscribe (a device must be registered).
     if (body?.pepAlert && typeof body.pepAlert === "object") {
       const h = parseInt(body.pepAlert.hour, 10);
+      const prev = cur.pepAlert || {};
       next.pepAlert = {
-        on: body.pepAlert.on === true,
-        hour: h >= 5 && h <= 22 ? h : (cur.pepAlert?.hour ?? 8),
-        tz: validTz(body.pepAlert.tz) ? body.pepAlert.tz : (cur.pepAlert?.tz || null),
+        ...prev,
+        on: body.pepAlert.on === false ? false : !!prev.on,
+        hour: h >= 5 && h <= 22 ? h : (prev.hour ?? 8),
+        tz: validTz(body.pepAlert.tz) ? body.pepAlert.tz : (prev.tz || null),
       };
     }
     await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { progress: next } });
@@ -153,6 +157,61 @@ const ACTIONS = {
     return json({ ok: true, url: await signedReportUrl(path) });
   },
 
+  // Phone notifications ------------------------------------------------------
+  async "push-key"(req) {
+    await sessionClient(req);
+    return json({ ok: true, publicKey: (await getVapid()).publicKey });
+  },
+
+  // POST {subscription, hour, tz} → registers this device and switches the daily reminder on
+  async "push-subscribe"(req) {
+    const c = await sessionClient(req);
+    const { subscription, hour, tz } = await readJson(req);
+    if (!validSubscription(subscription)) throw new HttpError(400, "invalid_subscription");
+    await db("push_subscriptions?on_conflict=endpoint", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: {
+      endpoint: subscription.endpoint, client_id: c.id, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth,
+      user_agent: (req.headers.get("user-agent") || "").slice(0, 200),
+    } });
+    const h = parseInt(hour, 10);
+    const prev = c.progress?.pepAlert || {};
+    const pepAlert = { ...prev, on: true, channel: "push", hour: h >= 5 && h <= 22 ? h : (prev.hour ?? 8), tz: validTz(tz) ? tz : (prev.tz || null), devices: await countDevices(c.id) };
+    await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { progress: { ...(c.progress || {}), pepAlert }, last_pep_alert: null } });
+    const en = c.lang === "en";
+    const test = await pushToClient(c.id, {
+      title: "RegeneCure",
+      body: en ? `Daily reminders on. You will be notified at ${String(pepAlert.hour).padStart(2, "0")}:00 on dosing days.`
+               : `Lembretes ativados. Você será avisado às ${String(pepAlert.hour).padStart(2, "0")}:00 nos dias de aplicação.`,
+      url: `/c/${c.access_token}`, tag: "welcome",
+    });
+    return json({ ok: true, pepAlert, test });
+  },
+
+  // POST {endpoint?} → removes this device (or all devices) and switches off when none remain
+  async "push-unsubscribe"(req) {
+    const c = await sessionClient(req);
+    const { endpoint } = await readJson(req);
+    await db(`push_subscriptions?client_id=eq.${c.id}${endpoint ? `&endpoint=eq.${enc(endpoint)}` : ""}`, { method: "DELETE", prefer: "return=minimal" });
+    const devices = await countDevices(c.id);
+    const pepAlert = { ...(c.progress?.pepAlert || {}), devices, on: devices > 0 && !endpoint ? false : devices > 0 ? !!c.progress?.pepAlert?.on : false };
+    await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { progress: { ...(c.progress || {}), pepAlert } } });
+    return json({ ok: true, pepAlert });
+  },
+
+  // GET ?token= → web app manifest so "Add to Home Screen" opens this client's dashboard
+  async manifest(req) {
+    const token = new URL(req.url).searchParams.get("token") || "";
+    if (!TOKEN_RE.test(token)) throw new HttpError(404, "not_found");
+    return new Response(JSON.stringify({
+      name: "RegeneCure", short_name: "RegeneCure", start_url: `/c/${token}`, scope: "/c/", display: "standalone",
+      background_color: "#F5F3EE", theme_color: "#0A1240",
+      icons: [
+        { src: "/assets/icon-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png" },
+        { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      ],
+    }), { headers: { "content-type": "application/manifest+json", "cache-control": "no-store" } });
+  },
+
   async logout(req) {
     const tok = req.headers.get("x-session") || "";
     if (tok) await db(`client_sessions?token_hash=eq.${enc(hashSecret(tok, "session"))}`, { method: "DELETE", prefer: "return=minimal" });
@@ -160,7 +219,8 @@ const ACTIONS = {
   },
 };
 
-const METHODS = { "request-code": "POST", verify: "POST", journey: "GET", check: "POST", progress: "POST", report: "GET", logout: "POST" };
+const METHODS = { "request-code": "POST", verify: "POST", journey: "GET", check: "POST", progress: "POST", report: "GET", logout: "POST",
+  "push-key": "GET", "push-subscribe": "POST", "push-unsubscribe": "POST", manifest: "GET" };
 
 export default handle(async (req, context) => {
   const action = context?.params?.action || new URL(req.url).pathname.split("/").pop();
