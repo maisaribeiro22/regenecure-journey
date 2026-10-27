@@ -7,7 +7,8 @@
 const ALLOWED = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif", "text/plain"];
 const MAX_B64 = 14_000_000; // about 10 MB of original file
 
-const SYSTEM = `You extract structured data from clinical documents for a regenerative-medicine client journey app.
+const SYSTEM = `Always answer by calling the record_journey tool exactly once.
+You extract structured data from clinical documents for a regenerative-medicine client journey app.
 The document may be a laboratory blood work report, a practitioner protocol, or both combined.
 Rules:
 - Record only what the document states. Never invent supplements, peptides, doses, dates or results.
@@ -166,11 +167,11 @@ export default async (req) => {
     stream: true,
     system: SYSTEM,
     tools: [TOOL],
-    tool_choice: { type: "tool", name: "record_journey" },
+    tool_choice: { type: "auto" },
     messages: [
       {
         role: "user",
-        content: [block, { type: "text", text: `Today's date is ${today}. Extract the client journey data from this document with the record_journey tool.` }],
+        content: [block, { type: "text", text: `Today's date is ${today}. Extract the client journey data from this document. Respond only by calling the record_journey tool exactly once; do not write any other text.` }],
       },
     ],
   });
