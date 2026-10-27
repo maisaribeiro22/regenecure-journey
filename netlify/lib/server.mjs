@@ -13,6 +13,9 @@ const DEFAULTS = {
   WA_TEMPLATE_JOURNEY: "jornada_pronta",
   WA_TEMPLATE_FOLLOWUP: "lembrete_followup",
   WA_TEMPLATE_OTP: "codigo_acesso",
+  WA_TEMPLATE_FU_CONFIRM: "followup_confirmacao",
+  WA_TEMPLATE_PEPTIDE: "lembrete_peptideo",
+  FOLLOWUP_REMINDER_HOUR: "10",
 };
 
 export const env = (k) => {
@@ -194,16 +197,83 @@ export async function sendJourney(c) {
 export async function sendFollowup(c, n) {
   const date = (c.followup_dates || [])[n - 1];
   if (!date) return { ok: false, error: "no_date" };
-  return sendTemplate({
+  const body = (name) => [
+    { type: "text", parameter_name: "name", text: firstName(c.name) },
+    { type: "text", parameter_name: "date", text: formatFollowup(date, c.data?.followUpTime || "", c.lang) },
+  ];
+  // Preferred: template with "confirm attendance" button that opens the follow-up stage.
+  const r = await sendTemplate({
+    to: c.whatsapp, name: env("WA_TEMPLATE_FU_CONFIRM"), lang: c.lang,
+    components: [
+      { type: "body", parameters: body() },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: `${c.access_token}.fu` }] },
+    ],
+  });
+  if (r.ok || r.error === "invalid_phone") return { ...r, template: env("WA_TEMPLATE_FU_CONFIRM") };
+  // Fallback while the new template is not yet approved.
+  const r2 = await sendTemplate({
     to: c.whatsapp, name: env("WA_TEMPLATE_FOLLOWUP"), lang: c.lang,
     components: [
-      { type: "body", parameters: [
-        { type: "text", parameter_name: "name", text: firstName(c.name) },
-        { type: "text", parameter_name: "date", text: formatFollowup(date, c.data?.followUpTime || "", c.lang) },
-      ] },
+      { type: "body", parameters: body() },
       { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: c.access_token }] },
     ],
   });
+  return { ...r2, template: env("WA_TEMPLATE_FOLLOWUP") };
+}
+
+const SLOT_LABEL = {
+  pt: { wake: "ao acordar", breakfast: "café da manhã", lunch: "almoço", afternoon: "tarde", dinner: "jantar", bedtime: "antes de dormir" },
+  en: { wake: "on waking", breakfast: "breakfast", lunch: "lunch", afternoon: "afternoon", dinner: "dinner", bedtime: "bedtime" },
+};
+export function peptideDosesText(list, lang) {
+  const L = SLOT_LABEL[lang === "en" ? "en" : "pt"];
+  const txt = list.map((p) => `${p.name} ${p.dose || ""}`.trim() + ((p.slots || []).length ? ` (${p.slots.map((x) => L[x] || x).join(", ")})` : "")).join("; ");
+  return txt.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, " ").slice(0, 900);
+}
+export async function sendPeptideReminder(c, list) {
+  return sendTemplate({
+    to: c.whatsapp, name: env("WA_TEMPLATE_PEPTIDE"), lang: c.lang,
+    components: [
+      { type: "body", parameters: [
+        { type: "text", parameter_name: "name", text: firstName(c.name) },
+        { type: "text", parameter_name: "doses", text: peptideDosesText(list, c.lang) },
+      ] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: `${c.access_token}.today` }] },
+    ],
+  });
+}
+
+/* ---------------- Protocol schedule (server copy of the browser engine) ---------------- */
+const DAY = 86400000;
+const parseDay = (d) => { const [y, m, dd] = String(d).slice(0, 10).split("-").map(Number); return Date.UTC(y, m - 1, dd); };
+export const addDaysISO = (d, n) => new Date(parseDay(d) + n * DAY).toISOString().slice(0, 10);
+const diffDaysISO = (a, b) => Math.round((parseDay(a) - parseDay(b)) / DAY);
+function pepEnd(js, p) {
+  if (p.end) return p.end;
+  if (p.cycleDays) return addDaysISO(p.start || js, p.cycleDays - 1);
+  return "";
+}
+export function peptidesOn(data, date) {
+  const js = data?.journeyStart;
+  if (!js || !data?.s1Confirmed) return [];
+  return (data.peptides || []).filter((p) => {
+    const st = p.start || js;
+    if (date < st) return false;
+    const en = pepEnd(js, p);
+    if (en && date > en) return false;
+    if (p.everyN > 1) return diffDaysISO(date, st) % p.everyN === 0;
+    const days = p.days && p.days.length ? p.days : [0, 1, 2, 3, 4, 5, 6];
+    return days.includes(new Date(parseDay(date)).getUTCDay());
+  });
+}
+export function validTz(tz) {
+  if (typeof tz !== "string" || !tz || tz.length > 60) return false;
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
+}
+export const defaultTz = (lang) => (lang === "en" ? "Asia/Dubai" : "America/Sao_Paulo");
+export function localNow(tz, now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now).map((x) => [x.type, x.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) % 24 };
 }
 
 /* ---------------- Templates (shared by sending and creation) ---------------- */
@@ -214,12 +284,16 @@ export function templateDefinitions() {
     pt: {
       journey: "Olá, {{name}}. Seu protocolo RegeneCure foi publicado no seu painel pessoal, com suplementos, peptídeos e datas de follow-up. Acesse pelo botão abaixo.",
       followup: "Olá, {{name}}. Lembrete: seu follow-up RegeneCure está agendado para {{date}}. Os detalhes do protocolo estão no seu painel.",
-      btn: "Abrir meu painel", copy: "Copiar código", date: "13 de novembro, 10:00",
+      fuConfirm: "Olá, {{name}}. Seu follow-up RegeneCure está agendado para {{date}}. Confirme sua presença ou solicite outro horário pelo botão abaixo.",
+      peptide: "Olá, {{name}}. Lembrete do seu protocolo para hoje: {{doses}}. Depois de cada aplicação, registre no seu painel pelo botão abaixo.",
+      btn: "Abrir meu painel", btnConfirm: "Confirmar presença", btnLog: "Registrar no painel", copy: "Copiar código", date: "13 de novembro, 10:00", doses: "BPC-157 250 mcg (ao acordar)",
     },
     en: {
       journey: "Hello {{name}}. Your RegeneCure protocol has been published to your personal dashboard, including supplements, peptides and follow-up dates. Open it with the button below.",
       followup: "Hello {{name}}. Reminder: your RegeneCure follow-up is scheduled for {{date}}. Your protocol details are in your dashboard.",
-      btn: "Open my dashboard", copy: "Copy code", date: "13 November, 10:00",
+      fuConfirm: "Hello {{name}}. Your RegeneCure follow-up is scheduled for {{date}}. Confirm your attendance or request another time with the button below.",
+      peptide: "Hello {{name}}. Your protocol reminder for today: {{doses}}. After each dose, log it in your dashboard with the button below.",
+      btn: "Open my dashboard", btnConfirm: "Confirm attendance", btnLog: "Log in my dashboard", copy: "Copy code", date: "13 November, 10:00", doses: "BPC-157 250 mcg (on waking)",
     },
   };
   const out = [];
@@ -233,6 +307,15 @@ export function templateDefinitions() {
     out.push({
       lang, name: env("WA_TEMPLATE_FOLLOWUP"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
       components: [{ type: "BODY", text: s.followup, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "date", example: s.date }] } }, button],
+    });
+    const btnWith = (text) => ({ type: "BUTTONS", buttons: [{ type: "URL", text, url, example: [sampleUrl] }] });
+    out.push({
+      lang, name: env("WA_TEMPLATE_FU_CONFIRM"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
+      components: [{ type: "BODY", text: s.fuConfirm, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "date", example: s.date }] } }, btnWith(s.btnConfirm)],
+    });
+    out.push({
+      lang, name: env("WA_TEMPLATE_PEPTIDE"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
+      components: [{ type: "BODY", text: s.peptide, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "doses", example: s.doses }] } }, btnWith(s.btnLog)],
     });
     out.push({
       lang, name: env("WA_TEMPLATE_OTP"), category: "AUTHENTICATION", language: waLang(lang),
@@ -249,9 +332,13 @@ export function templateDefinitions() {
 export async function createTemplates() {
   const waba = process.env.KAPSO_WABA_ID;
   if (!waba) throw new HttpError(400, "missing_waba_id");
+  let existing = [];
+  try { existing = await listTemplates(); } catch { existing = []; }
+  const has = new Map(existing.map((x) => [`${x.name}|${x.language}`, x.status]));
   // In parallel: Netlify synchronous functions stop after 10 s.
   return Promise.all(templateDefinitions().map(async (def) => {
     const { lang, ...payload } = def;
+    if (has.has(`${def.name}|${def.language}`)) return { name: def.name, language: def.language, ok: true, status: has.get(`${def.name}|${def.language}`), existing: true, error: null };
     try {
       const r = await kapsoPost(`${waba}/message_templates`, payload, 8000);
       return { name: def.name, language: def.language, ok: r.ok, status: r.body?.status || null, error: r.ok ? null : errMsg(r) };
@@ -271,7 +358,7 @@ export async function listTemplates() {
   const text = await res.text();
   if (!res.ok) throw new HttpError(502, "kapso_error", { detail: text.slice(0, 300) });
   const j = JSON.parse(text);
-  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP")]);
+  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM"), env("WA_TEMPLATE_PEPTIDE")]);
   return (j.data || []).filter((t) => wanted.has(t.name)).map((t) => ({ name: t.name, language: t.language, status: t.status, category: t.category }));
 }
 

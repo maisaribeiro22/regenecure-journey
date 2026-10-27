@@ -6,7 +6,10 @@
    ========================================================= */
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 APP.mode = PREVIEW ? 'preview' : 'client';
-const TOKEN = (location.pathname.match(/\/c\/([A-Za-z0-9_-]{16,64})/) || [])[1] || '';
+const PATH_M = location.pathname.match(/\/c\/([A-Za-z0-9_-]{16,64})(?:\.([a-z]+))?/) || [];
+const TOKEN = PATH_M[1] || '';
+const GOTO = PATH_M[2] || '';   // 'fu' → follow-up stage, 'today' → today's doses (links from WhatsApp)
+const browserTz = () => { try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){ return ''; } };
 const SESSION_KEY = 'regenecure.session.' + TOKEN;
 const ADMIN_AUTH_KEY = 'sb-gfdiwphqxyimckoxuqgs-auth-token';
 const CL = { view:'loading', step:'start', to:'', minutes:10, error:'', busy:false, cooldown:0 };
@@ -18,7 +21,7 @@ function hasLangPref(){ try{ return !!localStorage.getItem(LANG_KEY); }catch(e){
 
 class ApiError extends Error{ constructor(status, code, extra){ super(code); this.status = status; this.code = code; this.extra = extra || {}; } }
 async function api(action, body){
-  const headers = { 'Content-Type':'application/json' };
+  const headers = { 'Content-Type':'application/json', 'X-TZ':browserTz() };
   if(PREVIEW) headers['Authorization'] = `Bearer ${adminBearer()}`; else if(getSession()) headers['X-Session'] = getSession();
   const isGet = body === undefined;
   const url = `/api/client/${action}${isGet ? `?token=${encodeURIComponent(TOKEN)}` : ''}`;
@@ -45,7 +48,12 @@ async function load(){
     APP.client = rowToClient(r.client, r.checks);
     if(!hasLangPref()) APP.lang = APP.client.lang;
     ui.stage = null; ui.day = todayISO();
+    if(GOTO === 'fu') ui.stage = 4;
     CL.view = 'journey'; renderClient();
+    if(GOTO){
+      try{ history.replaceState(null, '', `/c/${TOKEN}${location.search}`); }catch(e){}
+      setTimeout(() => (GOTO === 'fu' ? $('#attendance') || $('#stagePanel') : $('.today'))?.scrollIntoView({ behavior:'smooth', block:'center' }), 300);
+    }
     if(canWrite()) setTimeout(afterChange, 600);
   }catch(e){
     if(e.status === 401 && !PREVIEW){ setSession(''); CL.view = 'login'; CL.step = 'start'; CL.error = ''; return renderClient(); }
@@ -123,7 +131,9 @@ function pushProgress(extra){
   const c = C();
   clearTimeout(progressTimer);
   progressTimer = setTimeout(() => {
-    api('progress', { confirmed:{ s2:c.confirmed.s2, s3:c.confirmed.s3, s4:c.confirmed.s4 }, seenBadges:c.seenBadges, lastLevel:c.lastLevel, ...(extra || {}) }).catch(() => {});
+    const fuConfirm = Object.fromEntries(Object.entries(c.fuConfirm || {}).map(([n, v]) => [n, v.status]));
+    api('progress', { confirmed:{ s2:c.confirmed.s2, s3:c.confirmed.s3, s4:c.confirmed.s4 }, seenBadges:c.seenBadges, lastLevel:c.lastLevel, fuConfirm, pepAlert:c.pepAlert, ...(extra || {}) })
+      .catch(() => toast(t('cl_offline'), 'warn'));
   }, 400);
 }
 function afterChange(){
@@ -158,6 +168,19 @@ async function toggleCheck(key, el){
     toast(t('cl_offline'), 'warn');
   }
 }
+function setAttendance(n, v){
+  const c = C(); if(!canWrite()) return;
+  c.fuConfirm = { ...(c.fuConfirm || {}), [n]:{ status:v, at:new Date().toISOString() } };
+  if(v === 'confirmed' && !c.confirmed.s4){ c.confirmed.s4 = true; xpFloat(XP.stage, null); }
+  renderClient(); pushProgress(); afterChange();
+  toast(v === 'confirmed' ? t('attDoneConfirmed') : t('attDoneReschedule'));
+}
+function setPepAlert(patch){
+  const c = C(); if(!canWrite()) return;
+  c.pepAlert = { on:false, hour:8, ...(c.pepAlert || {}), ...patch, tz:browserTz() };
+  renderClient(); pushProgress();
+  if('on' in patch) toast(c.pepAlert.on ? t('pepAlertSaved', { h:pad(c.pepAlert.hour) + ':00' }) : t('pepAlertDisabled'));
+}
 async function openReport(){
   try{ const r = await api('report'); window.open(r.url, '_blank', 'noopener'); }
   catch(e){ toast(t('cl_sendFail'), 'warn'); }
@@ -182,10 +205,13 @@ document.addEventListener('click', e => {
     case 'confirm': confirmStage(+el.dataset.n, el); break;
     case 'check': toggleCheck(el.dataset.key, el); break;
     case 'report-file': openReport(); break;
+    case 'att': setAttendance(+el.dataset.n, el.dataset.v); break;
+    case 'pep-toggle': setPepAlert({ on:!C().pepAlert?.on }); break;
     case 'ics': { const n = +el.dataset.n; const f = followupDates(c).find(x => x.n === n); download(`regenecure-followup-${n}.ics`, buildICS(c, [f]), 'text/calendar'); confirmStage(4, null); break; }
     case 'ics-all': { const list = followupDates(c).filter(f => !c.followups[f.n]?.done); download('regenecure-followups.ics', buildICS(c, list), 'text/calendar'); confirmStage(4, null); break; }
   }
 });
+document.addEventListener('change', e => { if(e.target.dataset.action === 'pep-hour') setPepAlert({ hour:+e.target.value }); });
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && modalOpen()) closeModal(); });
 setInterval(() => { const td = todayISO(); if(ui.lastToday && ui.lastToday !== td){ if(ui.day === ui.lastToday) ui.day = td; renderClient(); } ui.lastToday = td; }, 60000);
 ui.lastToday = todayISO();

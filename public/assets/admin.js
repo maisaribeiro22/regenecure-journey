@@ -41,7 +41,7 @@ const fmtStamp = s => s ? new Date(s).toLocaleString(locale(), { day:'2-digit', 
 const LIST_COLS = 'id,name,whatsapp,lang,status,data,progress,journey_start,followup_dates,reminders_sent,published_at,last_sent_at,last_seen_at,created_at,updated_at';
 async function loadSettings(){
   const { data } = await sb.from('app_settings').select('*').eq('id', 1).maybeSingle();
-  if(data){ APP.settings.shopUrl = data.shop_url || DEFAULT_SHOP; APP.settings.fitlineUrl = data.fitline_url || ''; APP.settings.autoReminders = data.auto_reminders !== false; }
+  if(data){ APP.settings.shopUrl = data.shop_url || DEFAULT_SHOP; APP.settings.fitlineUrl = data.fitline_url || ''; APP.settings.autoReminders = data.auto_reminders !== false; APP.settings.peptideAlerts = data.peptide_alerts !== false; }
 }
 async function saveSettingsRow(patch){
   const { error } = await sb.from('app_settings').update({ ...patch, updated_at:new Date().toISOString() }).eq('id', 1);
@@ -185,7 +185,7 @@ function renderList(){
   const td = todayISO();
   const body = rows.map(r => {
     const { c, day, adh, nf } = listStats(r);
-    const nfTxt = nf ? `${fmtShort(nf.date)} <span class="muted">· ${diffDays(nf.date, td) >= 0 ? t('inDays', { n:diffDays(nf.date, td) }) : t('overdue', { n:-diffDays(nf.date, td) })}</span>` : '—';
+    const nfTxt = nf ? `${fmtShort(nf.date)} <span class="muted">· ${diffDays(nf.date, td) >= 0 ? t('inDays', { n:diffDays(nf.date, td) }) : t('overdue', { n:-diffDays(nf.date, td) })}</span>${attendanceChip(c, nf.n) ? '<br>' + attendanceChip(c, nf.n) : ''}` : '—';
     const adhCls = adh === null ? '' : adh >= 80 ? 'normal' : adh >= 50 ? 'tbd' : 'high';
     return `<tr class="click" data-action="open-client" data-id="${r.id}">
       <td><b>${esc(r.name)}</b><div class="muted" style="font-size:12px">${esc(r.whatsapp || '—')} · ${r.lang.toUpperCase()}</div></td>
@@ -277,6 +277,15 @@ async function openReportFile(){
   if(error || !data?.signedUrl){ toast(t('saveErr'), 'warn'); return; }
   window.open(data.signedUrl, '_blank', 'noopener');
 }
+async function setClientPepAlert(patch){
+  const c = C(); if(!c) return;
+  c.pepAlert = { on:false, hour:8, ...(c.pepAlert || {}), ...patch };
+  if(!c.pepAlert.tz) c.pepAlert.tz = c.tz || (c.lang === 'en' ? 'Asia/Dubai' : 'America/Sao_Paulo');
+  renderAdmin();
+  const { data } = await sb.from('clients').select('progress').eq('id', c.id).maybeSingle();
+  const { error } = await sb.from('clients').update({ progress:{ ...(data?.progress || {}), pepAlert:c.pepAlert } }).eq('id', c.id);
+  if(error) toast(t('saveErr'), 'warn');
+}
 function copyText(txt, okMsg){
   const done = () => toast(okMsg || t('copied'));
   if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done, () => fallbackCopy(txt, done)); else fallbackCopy(txt, done);
@@ -309,6 +318,7 @@ async function openSettings(){
     <label class="f">${t('shopUrlL')}<input id="setShop" value="${esc(shopUrl())}" placeholder="${DEFAULT_SHOP}"></label>
     <label class="f">${t('fitlineUrlL')}<input id="setFitline" value="${esc(fitlineUrl())}" placeholder="https://"></label>
     <label class="checkrow"><input type="checkbox" id="setAuto" ${s.autoReminders ? 'checked' : ''}> ${t('autoReminders')}</label>
+    <label class="checkrow"><input type="checkbox" id="setPep" ${s.peptideAlerts !== false ? 'checked' : ''}> ${t('peptideAlertsGlobal')}</label>
     <h3 style="margin:18px 0 6px">${t('waTemplates')}</h3><p class="note" style="margin-top:0">${t('templatesHint')}</p>
     <div class="row"><button class="btn sm" data-action="tpl-create">${ic('plus')}${t('createTemplates')}</button><button class="btn sm" data-action="tpl-status">${ic('refresh')}${t('checkTemplates')}</button></div>
     <div id="tplBox" style="margin-top:10px"></div>
@@ -324,9 +334,9 @@ async function openSettings(){
 }
 async function saveSettings(){
   const m = document.querySelector('input[name=mode]:checked'); if(m){ APP.settings.extractMode = m.value; try{ localStorage.setItem(EXTRACT_KEY, m.value); }catch(e){} }
-  const shop = normUrl($('#setShop')?.value) || DEFAULT_SHOP, fl = normUrl($('#setFitline')?.value), auto = !!$('#setAuto')?.checked;
-  APP.settings.shopUrl = shop; APP.settings.fitlineUrl = fl; APP.settings.autoReminders = auto;
-  await saveSettingsRow({ shop_url:shop, fitline_url:fl || null, auto_reminders:auto });
+  const shop = normUrl($('#setShop')?.value) || DEFAULT_SHOP, fl = normUrl($('#setFitline')?.value), auto = !!$('#setAuto')?.checked, pep = !!$('#setPep')?.checked;
+  APP.settings.shopUrl = shop; APP.settings.fitlineUrl = fl; APP.settings.autoReminders = auto; APP.settings.peptideAlerts = pep;
+  await saveSettingsRow({ shop_url:shop, fitline_url:fl || null, auto_reminders:auto, peptide_alerts:pep });
   closeModal(); renderAdmin();
 }
 async function templatesAction(kind){
@@ -684,6 +694,7 @@ document.addEventListener('click', e => {
     case 'fu-done': { c.followups[+el.dataset.n] = { done:true, doneAt:new Date().toISOString() }; persist(); renderAdmin(); break; }
     case 'fu-undo': { delete c.followups[+el.dataset.n]; persist(); renderAdmin(); break; }
     case 'send-fu': sendFollowupReminder(+el.dataset.n); break;
+    case 'pep-toggle': setClientPepAlert({ on:!C().pepAlert?.on }); break;
     case 'send-journey': sendJourney(); break;
     case 'publish-only': setStatus('published').then(() => copyText(clientLink(C()), t('linkCopied'))); break;
     case 'unpublish': setStatus('draft'); break;
@@ -712,6 +723,7 @@ document.addEventListener('change', e => {
   else if(el.id === 'importIn'){ const f = el.files[0]; if(f) importBackup(f); }
   else if(el.dataset.action === 'set-mode'){ document.querySelectorAll('.radio label').forEach(l => l.classList.toggle('on', l.contains(document.querySelector('input[name=mode]:checked')))); }
   else if(el.dataset.action === 'fu-time'){ const c = C(); c.followUpTime = el.value || '10:00'; persist(); renderAdmin(); }
+  else if(el.dataset.action === 'pep-hour'){ setClientPepAlert({ hour:+el.value }); }
   else if(el.id === 'flVisible'){ const c = C(); c.fitline = { ...(c.fitline || {}), enabled:el.checked }; persist(); }
   else if(el.dataset.ed && editorDraft){ setPath(editorDraft, el.dataset.ed, el.value); }
 });

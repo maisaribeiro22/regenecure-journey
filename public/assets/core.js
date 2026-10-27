@@ -195,7 +195,10 @@ Object.assign(I18N.pt, {
   cl_codeSent:'Enviamos um código de 6 dígitos para {to}. Ele vale por {m} minutos.', cl_code:'Código de 6 dígitos', cl_enter:'Entrar', cl_resend:'Enviar novo código', cl_wait:'Aguarde alguns segundos para pedir um novo código.',
   cl_wrong:'Código incorreto. Restam {n} tentativas.', cl_expired:'Código expirado. Peça um novo.', cl_tooMany:'Muitas tentativas. Tente novamente em 15 minutos.', cl_notFound:'Link inválido ou desativado. Fale com a sua profissional.',
   cl_noWa:'Não há WhatsApp cadastrado para este acesso. Fale com a sua profissional.', cl_sendFail:'Não foi possível enviar o código agora. Tente novamente em alguns minutos.', cl_logout:'Sair deste aparelho',
-  cl_previewBanner:'Pré-visualização da profissional — as marcações não são salvas.', cl_report:'Baixar laudo', cl_offline:'Sem conexão. A marcação não foi salva.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD'
+  cl_previewBanner:'Pré-visualização da profissional — as marcações não são salvas.', cl_report:'Baixar laudo', cl_offline:'Sem conexão. A marcação não foi salva.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
+  pepAlertTitle:'Lembrete diário dos peptídeos no WhatsApp', pepAlertDesc:'Receba uma mensagem nos dias de aplicação, no horário escolhido.', pepAlertTime:'Horário', pepAlertOn:'Ativo · {h}', pepAlertOff:'Desativado pelo cliente', pepAlertSaved:'Lembrete diário ativado para {h}.', pepAlertDisabled:'Lembrete diário desativado.',
+  attAsk:'Você confirma a sua presença neste follow-up?', attConfirmBtn:'Confirmar presença', attRescheduleBtn:'Preciso remarcar', attDoneConfirmed:'Presença confirmada. Obrigado.', attDoneReschedule:'Pedido de remarcação registrado. A equipe RegeneCure entrará em contato.',
+  attConfirmed:'Presença confirmada', attReschedule:'Pediu remarcação', attWaiting:'Aguardando confirmação do cliente', peptideAlertsGlobal:'Lembretes diários de peptídeos no WhatsApp (para clientes com o lembrete ativo)'
 });
 Object.assign(I18N.en, {
   privacy:'The file is kept in the project\'s private storage (Supabase). In AI mode, it is sent to the Anthropic API for extraction.',
@@ -215,7 +218,10 @@ Object.assign(I18N.en, {
   cl_codeSent:'We sent a 6-digit code to {to}. It is valid for {m} minutes.', cl_code:'6-digit code', cl_enter:'Sign in', cl_resend:'Send a new code', cl_wait:'Wait a few seconds before requesting a new code.',
   cl_wrong:'Incorrect code. {n} attempts left.', cl_expired:'Code expired. Request a new one.', cl_tooMany:'Too many attempts. Try again in 15 minutes.', cl_notFound:'Invalid or disabled link. Contact your practitioner.',
   cl_noWa:'No WhatsApp number is registered for this access. Contact your practitioner.', cl_sendFail:'The code could not be sent right now. Try again in a few minutes.', cl_logout:'Sign out on this device',
-  cl_previewBanner:'Practitioner preview — ticks are not saved.', cl_report:'Download report', cl_offline:'No connection. The tick was not saved.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD'
+  cl_previewBanner:'Practitioner preview — ticks are not saved.', cl_report:'Download report', cl_offline:'No connection. The tick was not saved.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
+  pepAlertTitle:'Daily peptide reminder on WhatsApp', pepAlertDesc:'Get a message on dosing days, at the time you choose.', pepAlertTime:'Time', pepAlertOn:'Active · {h}', pepAlertOff:'Turned off by the client', pepAlertSaved:'Daily reminder on for {h}.', pepAlertDisabled:'Daily reminder turned off.',
+  attAsk:'Do you confirm your attendance at this follow-up?', attConfirmBtn:'Confirm attendance', attRescheduleBtn:'I need to reschedule', attDoneConfirmed:'Attendance confirmed. Thank you.', attDoneReschedule:'Reschedule request recorded. The RegeneCure team will contact you.',
+  attConfirmed:'Attendance confirmed', attReschedule:'Asked to reschedule', attWaiting:'Waiting for the client to confirm', peptideAlertsGlobal:'Daily peptide reminders on WhatsApp (for clients with the reminder on)'
 });
 
 /* ---------- Icons ---------- */
@@ -245,6 +251,7 @@ const IC = {
   refresh:'<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
   users:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  bell:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>'
 };
 const ic = (n, cls='i') => `<svg class="${cls}" viewBox="0 0 24 24">${IC[n]||''}</svg>`;
@@ -603,6 +610,7 @@ function renderStage3(c){
   let html = stageHead(3, `${editBtn()}${confirmBtn(c,3)}`);
   if(!c.peptides.length) return html + `<p class="muted">${t('noPep')}</p>`;
   const td = todayISO();
+  html += renderPepAlert(c);
   if(c.peptides.some(p => !effEnd(c,p,'pep'))) html += `<div class="alert warn" style="margin-top:0;margin-bottom:14px">${t('tbdWarn')}</div>`;
   html += `<div class="items">${c.peptides.map(p => {
     const st = effStart(c,p), en = effEnd(c,p,'pep'), status = pepStatus(c,p);
@@ -618,6 +626,33 @@ function renderStage3(c){
   }).join('')}</div>`;
   html += `<div class="section"><h3>${t('cycles')}</h3>${renderGantt(c)}</div>`;
   return html;
+}
+
+function renderPepAlert(c){
+  const pa = c.pepAlert || { on:false, hour:8 };
+  const can = canWrite() || isAdmin();
+  const hours = []; for(let h = 5; h <= 22; h++) hours.push(h);
+  const sel = `<select data-action="pep-hour" ${can ? '' : 'disabled'}>${hours.map(h => `<option value="${h}" ${(pa.hour ?? 8) === h ? 'selected' : ''}>${pad(h)}:00</option>`).join('')}</select>`;
+  const sub = isAdmin() ? (pa.on ? t('pepAlertOn', { h:pad(pa.hour ?? 8) + ':00' }) + (c.tz || pa.tz ? ` · ${esc(c.tz || pa.tz)}` : '') : t('pepAlertOff')) : t('pepAlertDesc');
+  return `<div class="alert-card ${pa.on ? 'on' : ''}">
+    <div class="ac-ic">${ic('bell')}</div>
+    <div class="ac-txt"><b>${t('pepAlertTitle')}</b><span class="muted">${sub}</span></div>
+    <div class="ac-ctl"><label class="pa-hour">${t('pepAlertTime')} ${sel}</label>
+      <button class="switch ${pa.on ? 'on' : ''}" data-action="pep-toggle" role="switch" aria-checked="${pa.on ? 'true' : 'false'}" aria-label="${t('pepAlertTitle')}" ${can ? '' : 'disabled'}><i></i></button></div>
+  </div>`;
+}
+function attendanceChip(c, n){
+  const s = c.fuConfirm?.[n]?.status;
+  if(s === 'confirmed') return `<span class="chip normal">${t('attConfirmed')}</span>`;
+  if(s === 'reschedule') return `<span class="chip high">${t('attReschedule')}</span>`;
+  return '';
+}
+function renderAttendance(c, nf){
+  const s = c.fuConfirm?.[nf.n]?.status;
+  if(isAdmin()) return `<div style="margin-top:10px">${s ? attendanceChip(c, nf.n) : `<span class="chip" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff">${t('attWaiting')}</span>`}</div>`;
+  const dis = canWrite() ? '' : 'disabled';
+  return `<div class="att" id="attendance"><div style="font-size:13px;margin-top:12px">${s === 'confirmed' ? t('attDoneConfirmed') : s === 'reschedule' ? t('attDoneReschedule') : t('attAsk')}</div>
+    <div class="row" style="margin-top:8px"><button class="btn sm ${s === 'confirmed' ? 'gold' : ''}" data-action="att" data-n="${nf.n}" data-v="confirmed" ${dis}>${ic('check')}${t('attConfirmBtn')}</button><button class="btn sm ${s === 'reschedule' ? 'gold' : ''}" data-action="att" data-n="${nf.n}" data-v="reschedule" ${dis}>${ic('calendar')}${t('attRescheduleBtn')}</button></div></div>`;
 }
 
 function renderGantt(c){
@@ -648,6 +683,7 @@ function renderStage4(c){
     html += `<div class="fu-next"><div class="fu-count"><b>${Math.abs(d)}</b><span class="mono">${d===0?t('today'):t('days')}</span></div>
       <div><span class="mono">${t('nextFU')} · ${t('fuN',{n:nf.n})}</span><h2>${fmtDate(nf.date, {weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</h2>
       <div style="opacity:.8;font-size:13px">${d>0?t('inDays',{n:d}):d===0?t('today'):t('overdue',{n:-d})}</div>
+      ${renderAttendance(c, nf)}
       <div class="row" style="margin-top:12px">${isAdmin() ? `<label style="font-size:13px">${t('fuTime')} <input type="time" value="${esc(c.followUpTime)}" data-action="fu-time"></label>` : `<span style="font-size:13px">${t('fuTime')}: <b>${esc(c.followUpTime)}</b></span>`}
       <button class="btn sm gold" data-action="ics" data-n="${nf.n}">${ic('download')}${t('addCal')}</button>
       <a class="btn sm" href="${gcalLink(c, nf)}" target="_blank" rel="noopener" data-action="gcal">${ic('link')}${t('gcal')}</a>
@@ -657,7 +693,7 @@ function renderStage4(c){
   html += `<div class="section"><h3>${t('followups')}</h3><div class="fu-list">${list.map(f => {
     const done = c.followups[f.n]?.done; const d = diffDays(f.date, td);
     return `<div class="fu-item ${done?'done':''}"><div class="num">${done?ic('check'):f.n}</div><div><b>${t('fuN',{n:f.n})}</b> · ${fmtDate(f.date, {weekday:'short', day:'2-digit', month:'short', year:'numeric'})}<div class="muted" style="font-size:12px">${done?t('done'):(d>0?t('inDays',{n:d}):d===0?t('today'):t('overdue',{n:-d}))} · ${t('day')} ${30*f.n}</div></div>
-      <div class="row" style="gap:6px">${isAdmin() && (c.remindersSent||[]).includes(f.n) ? `<span class="chip sched">${t('reminderSent')}</span>` : ''}${done ? (isAdmin() ? `<button class="btn sm ghost" data-action="fu-undo" data-n="${f.n}">${t('undo')}</button>` : '') : `<button class="btn sm" data-action="ics" data-n="${f.n}" title="${t('addCal')}">${ic('download')}.ics</button>${isAdmin() && f.date <= td ? `<button class="btn sm" data-action="fu-done" data-n="${f.n}" title="${t('markDone')}">${ic('check')}</button>` : ''}`}</div></div>`;
+      <div class="row" style="gap:6px">${attendanceChip(c, f.n)}${isAdmin() && (c.remindersSent||[]).includes(f.n) ? `<span class="chip sched">${t('reminderSent')}</span>` : ''}${done ? (isAdmin() ? `<button class="btn sm ghost" data-action="fu-undo" data-n="${f.n}">${t('undo')}</button>` : '') : `<button class="btn sm" data-action="ics" data-n="${f.n}" title="${t('addCal')}">${ic('download')}.ics</button>${isAdmin() && f.date <= td ? `<button class="btn sm" data-action="fu-done" data-n="${f.n}" title="${t('markDone')}">${ic('check')}</button>` : ''}`}</div></div>`;
   }).join('')}</div></div>`;
   if(c.followUpNotes) html += `<div class="section"><h3>${t('fuNotes')}</h3><p style="white-space:pre-line;margin:0">${esc(c.followUpNotes)}</p></div>`;
   return html;
@@ -729,6 +765,7 @@ function rowToClient(row, checks){
     checks:Object.fromEntries((checks || []).map(k => [k, true])),
     followups:d.followups || {}, followUpTime:d.followUpTime || '10:00', fitline:d.fitline || {},
     seenBadges:p.seenBadges || [], lastLevel:p.lastLevel || 0, remindersSent:row.reminders_sent || [],
+    fuConfirm:p.fuConfirm || {}, pepAlert:{ on:false, hour:8, ...(p.pepAlert || {}) }, tz:row.tz || '',
     publishedAt:row.published_at || null, lastSentAt:row.last_sent_at || null, lastSeenAt:row.last_seen_at || null, createdAt:row.created_at || null
   };
 }

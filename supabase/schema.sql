@@ -216,3 +216,10 @@ create policy reports_admin_update on storage.objects
 drop policy if exists reports_admin_delete on storage.objects;
 create policy reports_admin_delete on storage.objects
   for delete to authenticated using (bucket_id = 'reports' and public.is_admin());
+
+-- ---------------------------------------------------------------------
+-- v2 (Oct 2026): daily peptide reminders and client time zones
+-- ---------------------------------------------------------------------
+alter table public.app_settings add column if not exists peptide_alerts boolean not null default true;
+alter table public.clients add column if not exists tz text;
+alter table public.clients add column if not exists last_pep_alert date;

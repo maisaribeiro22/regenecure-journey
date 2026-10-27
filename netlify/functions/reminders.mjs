@@ -1,28 +1,56 @@
-// Daily at 12:00 UTC (16:00 Dubai, 09:00 Brasília): WhatsApp reminder for follow-ups due tomorrow.
-import { db, dbAll, sendFollowup, logMessage, env, todayUTC, waDigits, kapsoConfigured } from "../lib/server.mjs";
+// Runs every hour. For each published client, in the client's own time zone:
+//  · follow-up reminder at FOLLOWUP_REMINDER_HOUR (default 10:00) on the day before the appointment;
+//  · daily peptide reminder at the hour the client chose, on days with a scheduled peptide dose.
+import {
+  db, dbAll, env, waDigits, kapsoConfigured, logMessage, sendFollowup, sendPeptideReminder,
+  peptidesOn, localNow, validTz, defaultTz, addDaysISO,
+} from "../lib/server.mjs";
 
-export default async () => {
-  if (!process.env.SUPABASE_SECRET_KEY || !kapsoConfigured()) {
-    console.log("reminders skipped: missing configuration");
-    return;
-  }
-  const settings = (await db("app_settings?id=eq.1&select=auto_reminders"))[0];
-  if (settings && settings.auto_reminders === false) { console.log("reminders disabled"); return; }
+export async function runReminders(now = new Date()) {
+  if (!process.env.SUPABASE_SECRET_KEY || !kapsoConfigured()) return { skipped: "missing configuration" };
+  const settings = (await db("app_settings?id=eq.1&select=auto_reminders,peptide_alerts"))[0] || {};
+  const fuOn = settings.auto_reminders !== false;
+  const pepOn = settings.peptide_alerts !== false;
+  const fuHour = parseInt(env("FOLLOWUP_REMINDER_HOUR"), 10);
+  const clients = await dbAll("clients?status=eq.published&whatsapp=not.is.null&select=id,name,whatsapp,lang,access_token,data,progress,followup_dates,reminders_sent,tz,last_pep_alert");
+  const out = { followups: 0, peptides: 0, clients: clients.length };
 
-  const tomorrow = todayUTC(1);
-  const clients = await dbAll(`clients?status=eq.published&followup_dates=cs.{${tomorrow}}&select=id,name,whatsapp,lang,access_token,data,followup_dates,reminders_sent`);
-  let sent = 0;
   for (const c of clients) {
-    const n = (c.followup_dates || []).indexOf(tomorrow) + 1;
-    if (n < 1 || (c.reminders_sent || []).includes(n) || c.data?.followups?.[n]?.done || !waDigits(c.whatsapp)) continue;
-    const r = await sendFollowup(c, n);
-    await logMessage(c.id, "followup_auto", env("WA_TEMPLATE_FOLLOWUP"), r);
-    if (r.ok) {
-      sent++;
-      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { reminders_sent: [...(c.reminders_sent || []), n] } });
+    if (!waDigits(c.whatsapp)) continue;
+    const pa = c.progress?.pepAlert || {};
+    const tz = [c.tz, pa.tz].find(validTz) || defaultTz(c.lang);
+    const { date, hour } = localNow(tz, now);
+
+    if (fuOn && hour === fuHour) {
+      const tomorrow = addDaysISO(date, 1);
+      const n = (c.followup_dates || []).indexOf(tomorrow) + 1;
+      if (n > 0 && !(c.reminders_sent || []).includes(n) && !c.data?.followups?.[n]?.done) {
+        const r = await sendFollowup(c, n);
+        await logMessage(c.id, "followup_auto", r.template, r);
+        if (r.ok) {
+          out.followups++;
+          await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { reminders_sent: [...(c.reminders_sent || []), n] } });
+        }
+      }
+    }
+
+    if (pepOn && pa.on === true && hour === pa.hour && c.last_pep_alert !== date) {
+      const list = peptidesOn(c.data, date);
+      if (list.length) {
+        const r = await sendPeptideReminder(c, list);
+        await logMessage(c.id, "peptide_daily", env("WA_TEMPLATE_PEPTIDE"), r);
+        if (r.ok) out.peptides++;
+      }
+      // Mark the day as handled even on rest days, so the job does not retry every hour.
+      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { last_pep_alert: date } });
     }
   }
-  console.log(`reminders: ${sent}/${clients.length} sent for ${tomorrow}`);
+  return out;
+}
+
+export default async () => {
+  const out = await runReminders();
+  console.log("reminders", JSON.stringify(out));
 };
 
-export const config = { schedule: "0 12 * * *" };
+export const config = { schedule: "0 * * * *" };

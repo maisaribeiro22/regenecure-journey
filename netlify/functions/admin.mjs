@@ -34,7 +34,7 @@ const ACTIONS = {
       if (!(num >= 1)) throw new HttpError(400, "invalid_n");
       if (c.status !== "published") throw new HttpError(409, "not_published");
       const r = await sendFollowup(c, num);
-      await logMessage(c.id, "followup", env("WA_TEMPLATE_FOLLOWUP"), r);
+      await logMessage(c.id, "followup", r.template || env("WA_TEMPLATE_FOLLOWUP"), r);
       if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
       const sent = [...new Set([...(c.reminders_sent || []), num])];
       await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { reminders_sent: sent } });

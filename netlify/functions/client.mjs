@@ -2,7 +2,7 @@
 // Clients never receive database credentials; every call is checked here.
 import {
   handle, json, readJson, HttpError, db, dbAll, enc, hashSecret, randomToken, randomCode, safeEqual,
-  sendOtp, logMessage, maskPhone, waDigits, requireAdmin, signedReportUrl, todayUTC, kapsoConfigured,
+  sendOtp, logMessage, maskPhone, waDigits, requireAdmin, signedReportUrl, todayUTC, kapsoConfigured, validTz,
 } from "../lib/server.mjs";
 
 const SESSION_DAYS = 30;
@@ -11,7 +11,7 @@ const MAX_ATTEMPTS = 5;
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const KEY_RE = /^(\d{4}-\d{2}-\d{2})\|[sp]:[A-Za-z0-9_-]{1,40}\|(wake|breakfast|lunch|afternoon|dinner|bedtime)$/;
 const BADGES = ["baseline", "protocol", "calendar", "streak7", "streak21", "adh90", "cycle", "fu1"];
-const CLIENT_COLS = "id,name,whatsapp,lang,status,access_token,data,progress,journey_start,followup_dates,published_at";
+const CLIENT_COLS = "id,name,whatsapp,lang,status,access_token,data,progress,journey_start,followup_dates,published_at,tz";
 
 async function clientByToken(token, { publishedOnly = true } = {}) {
   if (!TOKEN_RE.test(token || "")) throw new HttpError(404, "not_found");
@@ -88,13 +88,16 @@ const ACTIONS = {
       c = await sessionClient(req);
       const pathToken = url.searchParams.get("token");
       if (pathToken && pathToken !== c.access_token) throw new HttpError(401, "no_session");
-      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { last_seen_at: new Date().toISOString() } });
+      const tz = req.headers.get("x-tz");
+      const patch = { last_seen_at: new Date().toISOString() };
+      if (validTz(tz) && tz !== c.tz) patch.tz = tz;
+      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: patch });
     }
     const [logs, settings] = await Promise.all([
       dbAll(`dose_logs?client_id=eq.${c.id}&select=dose_key&order=dose_key`),
       db("app_settings?id=eq.1&select=shop_url,fitline_url"),
     ]);
-    const { access_token, whatsapp, ...safe } = c;
+    const { access_token, whatsapp, tz: _tz, ...safe } = c;
     return json({ ok: true, preview, client: safe, checks: logs.map((l) => l.dose_key), settings: settings[0] || {} });
   },
 
@@ -119,6 +122,24 @@ const ACTIONS = {
     for (const k of ["s2", "s3", "s4"]) if (body?.confirmed?.[k] === true) next.confirmed[k] = true;
     if (Array.isArray(body?.seenBadges)) next.seenBadges = [...new Set([...(cur.seenBadges || []), ...body.seenBadges.filter((b) => BADGES.includes(b))])];
     if (Number.isInteger(body?.lastLevel) && body.lastLevel >= 0 && body.lastLevel <= 5) next.lastLevel = Math.max(cur.lastLevel || 0, body.lastLevel);
+    // Follow-up attendance: { "<n>": "confirmed" | "reschedule" }
+    if (body?.fuConfirm && typeof body.fuConfirm === "object") {
+      const fc = { ...(cur.fuConfirm || {}) };
+      for (const [k, v] of Object.entries(body.fuConfirm)) {
+        const n = parseInt(k, 10);
+        if (n >= 1 && n <= 60 && (v === "confirmed" || v === "reschedule") && fc[n]?.status !== v) fc[n] = { status: v, at: new Date().toISOString() };
+      }
+      next.fuConfirm = fc;
+    }
+    // Daily peptide reminder: { on, hour (5–22), tz }
+    if (body?.pepAlert && typeof body.pepAlert === "object") {
+      const h = parseInt(body.pepAlert.hour, 10);
+      next.pepAlert = {
+        on: body.pepAlert.on === true,
+        hour: h >= 5 && h <= 22 ? h : (cur.pepAlert?.hour ?? 8),
+        tz: validTz(body.pepAlert.tz) ? body.pepAlert.tz : (cur.pepAlert?.tz || null),
+      };
+    }
     await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { progress: next } });
     return json({ ok: true, progress: next });
   },
