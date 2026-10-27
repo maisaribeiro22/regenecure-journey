@@ -135,11 +135,12 @@ export function kapsoConfigured() {
   return !!process.env.KAPSO_API_KEY && !!env("KAPSO_PHONE_NUMBER_ID");
 }
 
-async function kapsoPost(path, payload) {
+async function kapsoPost(path, payload, timeoutMs = 8000) {
   const key = process.env.KAPSO_API_KEY;
   if (!key) throw new HttpError(500, "missing_kapso_key");
   const res = await fetch(`${env("KAPSO_API_BASE")}/${path}`, {
     method: "POST",
+    signal: AbortSignal.timeout(timeoutMs),
     headers: { "x-api-key": key, "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
@@ -248,20 +249,25 @@ export function templateDefinitions() {
 export async function createTemplates() {
   const waba = process.env.KAPSO_WABA_ID;
   if (!waba) throw new HttpError(400, "missing_waba_id");
-  const results = [];
-  for (const def of templateDefinitions()) {
+  // In parallel: Netlify synchronous functions stop after 10 s.
+  return Promise.all(templateDefinitions().map(async (def) => {
     const { lang, ...payload } = def;
-    const r = await kapsoPost(`${waba}/message_templates`, payload);
-    results.push({ name: def.name, language: def.language, ok: r.ok, status: r.body?.status || null, error: r.ok ? null : errMsg(r) });
-  }
-  return results;
+    try {
+      const r = await kapsoPost(`${waba}/message_templates`, payload, 8000);
+      return { name: def.name, language: def.language, ok: r.ok, status: r.body?.status || null, error: r.ok ? null : errMsg(r) };
+    } catch (e) {
+      return { name: def.name, language: def.language, ok: false, status: null, error: e?.name === "TimeoutError" ? "timeout" : String(e?.message || e).slice(0, 200) };
+    }
+  }));
 }
 
 export async function listTemplates() {
   const waba = process.env.KAPSO_WABA_ID;
   const key = process.env.KAPSO_API_KEY;
   if (!waba || !key) throw new HttpError(400, "missing_waba_id");
-  const res = await fetch(`${env("KAPSO_API_BASE")}/${waba}/message_templates?fields=name,status,language,category&limit=200`, { headers: { "x-api-key": key } });
+  let res;
+  try { res = await fetch(`${env("KAPSO_API_BASE")}/${waba}/message_templates?fields=name,status,language,category&limit=200`, { headers: { "x-api-key": key }, signal: AbortSignal.timeout(8000) }); }
+  catch (e) { throw new HttpError(504, "kapso_timeout"); }
   const text = await res.text();
   if (!res.ok) throw new HttpError(502, "kapso_error", { detail: text.slice(0, 300) });
   const j = JSON.parse(text);
