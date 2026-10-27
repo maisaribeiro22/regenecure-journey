@@ -11,8 +11,8 @@ const sb = window.supabase.createClient(SB_URL, SB_KEY, { auth:{ persistSession:
 const EXTRACT_KEY = 'regenecure.extractMode';
 try{ const m = localStorage.getItem(EXTRACT_KEY); if(m === 'local' || m === 'server') APP.settings.extractMode = m; }catch(e){}
 
-Object.assign(I18N.pt, { errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
-Object.assign(I18N.en, { errAuth:'Session expired or no permission. Sign in again.' });
+Object.assign(I18N.pt, { loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
+Object.assign(I18N.en, { loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
 
 const A = { view:'loading', user:null, rows:[], activity:{}, search:'', loginError:'', health:null, tpl:null, busyAction:'' };
 
@@ -126,7 +126,13 @@ async function signIn(){
   A.lastEmail = email; A.loginError = ''; A.busyAction = 'login'; renderAdmin();
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   A.busyAction = '';
-  if(error){ A.loginError = t('loginErr'); renderAdmin(); return; }
+  if(error){
+    const msg = String(error.message || '');
+    A.loginError = /not confirmed/i.test(msg) || error.code === 'email_not_confirmed' ? t('loginUnconfirmed')
+      : /invalid login credentials/i.test(msg) || error.code === 'invalid_credentials' ? t('loginErr')
+      : `${t('loginErr')} (${msg || error.status || 'erro'})`;
+    renderAdmin(); return;
+  }
   await afterLogin(data.user);
 }
 async function signOut(){ await sb.auth.signOut(); A.user = null; APP.client = null; A.view = 'login'; location.hash = ''; renderAdmin(); }
