@@ -8,8 +8,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'RegeneCure';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
-    icon: '/assets/icon-192.png?v=2',
-    badge: '/assets/badge-96.png?v=2',
+    icon: '/assets/icon-192.png?v=3',
+    badge: '/assets/badge-96.png?v=3',
     tag: data.tag || 'regenecure',
     renotify: true,
     data: { url: data.url || '/' },

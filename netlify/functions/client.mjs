@@ -203,11 +203,11 @@ const ACTIONS = {
     if (!TOKEN_RE.test(token)) throw new HttpError(404, "not_found");
     return new Response(JSON.stringify({
       name: "RegeneCure", short_name: "RegeneCure", start_url: `/c/${token}`, scope: "/c/", display: "standalone",
-      background_color: "#F5F3EE", theme_color: "#0A1240",
+      background_color: "#FFFFFF", theme_color: "#0A1240",
       icons: [
-        { src: "/assets/icon-192.png?v=2", sizes: "192x192", type: "image/png" },
-        { src: "/assets/icon-512.png?v=2", sizes: "512x512", type: "image/png" },
-        { src: "/assets/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        { src: "/assets/icon-192.png?v=3", sizes: "192x192", type: "image/png" },
+        { src: "/assets/icon-512.png?v=3", sizes: "512x512", type: "image/png" },
+        { src: "/assets/icon-512.png?v=3", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     }), { headers: { "content-type": "application/manifest+json", "cache-control": "no-store" } });
   },
