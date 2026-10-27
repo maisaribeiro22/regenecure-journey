@@ -11,8 +11,8 @@ const sb = window.supabase.createClient(SB_URL, SB_KEY, { auth:{ persistSession:
 const EXTRACT_KEY = 'regenecure.extractMode';
 try{ const m = localStorage.getItem(EXTRACT_KEY); if(m === 'local' || m === 'server') APP.settings.extractMode = m; }catch(e){}
 
-Object.assign(I18N.pt, { loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
-Object.assign(I18N.en, { loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
+Object.assign(I18N.pt, { editClient:'Editar dados do cliente', loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
+Object.assign(I18N.en, { editClient:'Edit client details', loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
 
 const A = { view:'loading', user:null, rows:[], activity:{}, search:'', loginError:'', health:null, tpl:null, busyAction:'' };
 
@@ -225,6 +225,7 @@ function renderAdminBar(c){
       <button class="btn sm" data-action="preview">${ic('eye')}${t('previewClient')}</button>
       <details class="menu"><summary class="btn sm" aria-label="more">•••</summary><div class="menu-pop">
         ${draft ? `<button data-action="publish-only" ${c.confirmed.s1 ? '' : 'disabled'}>${t('publishOnly')}</button>` : `<button data-action="unpublish">${t('unpublish')}</button>`}
+        <button data-action="editor">${ic('edit')}${t('editClient')}</button>
         <button data-action="rotate">${ic('refresh')}${t('rotate')}</button>
         <button data-action="delete-client" class="danger">${ic('trash')}${t('deleteClient')}</button>
       </div></details>
@@ -634,14 +635,15 @@ function getPath(obj, path){ return path.split('.').reduce((o, k) => o?.[k], obj
 function editorSave(){
   const c = C(), d = editorDraft; if(!c || !d) return;
   if(d.patient.whatsapp && !waDigits(d.patient.whatsapp)){ toast(t('waInvalid'),'warn'); document.querySelector('[data-ed="patient.whatsapp"]')?.focus(); return; }
-  c.lang = d.lang === 'en' ? 'en' : 'pt'; c.patient = d.patient; c.report = d.report; c.journeyStart = validISO(d.journeyStart) || todayISO(); c.followUpNotes = d.followUpNotes || '';
+  const hasContent = !!c.report || d.supplements.some(x => x.name.trim()) || d.peptides.some(x => x.name.trim()) || d.biomarkers.some(x => x.name.trim());
+  c.lang = d.lang === 'en' ? 'en' : 'pt'; c.patient = d.patient; c.report = c.report || hasContent ? d.report : null; c.journeyStart = validISO(d.journeyStart) || todayISO(); c.followUpNotes = d.followUpNotes || '';
   const fixInt = v => posInt(v); const fixN = v => { const n = parseInt(v,10); return n > 1 ? n : 0; };
   c.supplements = d.supplements.filter(s => s.name.trim()).map(s => ({...s, start:validISO(s.start), durationDays:fixInt(s.durationDays), everyN:fixN(s.everyN), days:s.days.map(Number).sort(), slots:s.slots.length ? s.slots : ['breakfast']}));
   c.peptides = d.peptides.filter(p => p.name.trim()).map(p => { const o = {...p, start:validISO(p.start), end:validISO(p.end), cycleDays:fixInt(p.cycleDays), everyN:fixN(p.everyN), days:p.days.map(Number).sort(), slots:p.slots.length ? p.slots : ['wake']}; if(o.end && !o.cycleDays) o.cycleDays = diffDays(o.end, effStart(c,o)) + 1; return o; });
   c.biomarkers = d.biomarkers.filter(b => b.name.trim());
-  const wasConfirmed = c.confirmed.s1; c.confirmed.s1 = true;
+  const wasConfirmed = c.confirmed.s1; c.confirmed.s1 = wasConfirmed || hasContent;
   closeModal();
-  if(!wasConfirmed) ui.stage = 2;
+  if(!wasConfirmed && c.confirmed.s1) ui.stage = 2;
   persist(); renderAdmin();
 }
 
