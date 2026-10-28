@@ -4,7 +4,7 @@ import {
   waDigits, env, appUrl, createTemplates, listTemplates, kapsoConfigured, randomToken,
 } from "../lib/server.mjs";
 
-const COLS = "id,name,whatsapp,lang,status,access_token,data,followup_dates,reminders_sent,published_at";
+const COLS = "id,name,whatsapp,lang,status,access_token,data,followup_dates,reminders_sent,published_at,last_inbound_at";
 
 async function loadClient(id) {
   if (!/^[0-9a-f-]{36}$/i.test(id || "")) throw new HttpError(400, "invalid_client");
@@ -23,7 +23,7 @@ const ACTIONS = {
     if (kind === "journey") {
       if (!c.data?.s1Confirmed) throw new HttpError(409, "not_reviewed");
       const r = await sendJourney(c);
-      await logMessage(c.id, "journey", env("WA_TEMPLATE_JOURNEY"), r);
+      await logMessage(c.id, "journey", r.template || env("WA_TEMPLATE_JOURNEY"), r);
       if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
       const now = new Date().toISOString();
       await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { status: "published", published_at: c.published_at || now, last_sent_at: now } });
@@ -71,6 +71,7 @@ const ACTIONS = {
       kapso_key: !!process.env.KAPSO_API_KEY,
       kapso_phone: env("KAPSO_PHONE_NUMBER_ID"),
       kapso_waba: !!process.env.KAPSO_WABA_ID,
+      kapso_webhook: !!process.env.KAPSO_WEBHOOK_SECRET,
       templates: { journey: env("WA_TEMPLATE_JOURNEY"), followup: env("WA_TEMPLATE_FOLLOWUP"), otp: env("WA_TEMPLATE_OTP"), pt: env("WA_LANG_PT"), en: env("WA_LANG_EN") },
     });
   },

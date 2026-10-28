@@ -15,7 +15,8 @@ public/assets/admin.js       lógica da profissional (Supabase Auth, upload, env
 public/assets/client.js      lógica do cliente (código WhatsApp, marcações)
 netlify/functions/client.mjs API do cliente: código, sessão, jornada, marcações
 netlify/functions/admin.mjs  API da profissional: envio WhatsApp, novo link, templates
-netlify/functions/reminders.mjs  lembrete diário automático (12:00 UTC)
+netlify/functions/reminders.mjs  lembretes automáticos (roda a cada hora)
+netlify/functions/kapso-webhook.mjs  recebe do Kapso as mensagens do cliente (janela de 24 h)
 netlify/edge-functions/extract.js  extração do laudo por IA (somente profissional)
 netlify/lib/server.mjs       Supabase, Kapso e templates (servidor)
 supabase/schema.sql          banco, regras de acesso e armazenamento
@@ -50,6 +51,7 @@ Add new project → Import from GitHub → este repositório. Sem comando de bui
 | `KAPSO_API_KEY` | chave de API do Kapso |
 | `KAPSO_WABA_ID` | WhatsApp Business Account ID |
 | `APP_URL` | `https://jornada.regenecure.com` |
+| `KAPSO_WEBHOOK_SECRET` | chave secreta do webhook do Kapso (seção Janela de 24 h) |
 
 Depois de salvar as variáveis: **Deploys → Trigger deploy**.
 
@@ -61,11 +63,12 @@ Netlify → **Domain management → Add a domain** → `jornada.regenecure.com`.
 
 ### 5. Templates do WhatsApp
 
-Na plataforma: **Configurações → Criar templates no WhatsApp**. São criados 6 templates (português e inglês); a Meta revisa cada um. Use **Verificar status** até todos aparecerem como `APPROVED`.
+Na plataforma: **Configurações → Criar templates no WhatsApp**. São criados 10 templates (português e inglês); a Meta revisa cada um. Use **Verificar status** até todos aparecerem como `APPROVED`.
 
 | Template | Categoria | Uso |
 |---|---|---|
-| `jornada_pronta` | Utility | Aviso de protocolo publicado, com botão para o painel |
+| `jornada_publicada` | Utility | Aviso de protocolo publicado, com botão para o painel e resposta rápida **Recebi** |
+| `jornada_pronta` | Utility | Versão anterior, sem **Recebi** — usada automaticamente enquanto a nova não for aprovada |
 | `lembrete_followup` | Utility | Lembrete de follow-up (manual ou automático, 1 dia antes) |
 | `codigo_acesso` | Authentication | Código de 6 dígitos para o cliente entrar |
 | `followup_confirmacao` | Utility | Lembrete automático 1 dia antes do follow-up, com botão para confirmar presença ou pedir remarcação |
@@ -74,6 +77,21 @@ Na plataforma: **Configurações → Criar templates no WhatsApp**. São criados
 ## FitLine
 
 Na ficha do cliente, **FitLine → Enviar pelo WhatsApp Business** envia o link pela plataforma. O cliente recebe `jornada.regenecure.com/f/<link pessoal>`, que redireciona para o link FitLine de Configurações; cada abertura fica registrada e aparece na janela FitLine.
+
+## Janela de 24 h do WhatsApp
+
+A Meta só permite mensagem livre (sem template) até 24 h depois da última mensagem do cliente. Quando o cliente toca **Recebi** no aviso do protocolo, ou escreve qualquer coisa, a janela abre.
+
+O Kapso avisa a plataforma de cada mensagem recebida. Com isso, a janela FitLine mostra **Janela aberta até HH:MM** (vai como mensagem normal) ou **Fora da janela de 24 h** (vai como template de marketing), e a plataforma escolhe o formato certo sem tentativa falha. Só o tipo da mensagem é registrado, nunca o conteúdo.
+
+Configuração (uma vez):
+
+1. Kapso → **WhatsApp → Configuration** do número → **Manage Webhooks → Add Webhook**.
+2. URL: `https://jornada.regenecure.com/api/kapso/webhook` · evento **Message received** → **Create Webhook** → copie a chave secreta.
+3. Netlify → Environment variables → `KAPSO_WEBHOOK_SECRET` com essa chave → **Trigger deploy**.
+4. Supabase → SQL Editor → rode `supabase/migrations/004_inbound.sql`.
+
+Sem o webhook, a plataforma continua funcionando como antes: tenta a mensagem livre e, se a Meta recusar, envia o template.
 
 ## Lembretes automáticos
 
@@ -84,7 +102,7 @@ Uma função roda a cada hora e usa o fuso horário de cada cliente (capturado d
 
 Ambos podem ser desligados para todos os clientes em Configurações.
 
-Projetos criados antes destas versões: rode, no SQL Editor, `supabase/migrations/002_alerts.sql` e `supabase/migrations/003_push.sql`. As chaves das notificações (VAPID) são geradas automaticamente no primeiro uso e ficam guardadas no banco, sem configuração extra.
+Projetos criados antes destas versões: rode, no SQL Editor, `supabase/migrations/002_alerts.sql`, `003_push.sql` e `004_inbound.sql`. As chaves das notificações (VAPID) são geradas automaticamente no primeiro uso e ficam guardadas no banco, sem configuração extra.
 
 Se preferir criar no painel do Kapso: categoria e nomes iguais aos da tabela, parâmetros nomeados `{{name}}` e `{{date}}`, botão de URL `https://jornada.regenecure.com/c/{{1}}`. Textos em `netlify/lib/server.mjs` → `templateDefinitions()`.
 

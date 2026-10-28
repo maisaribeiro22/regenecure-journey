@@ -10,7 +10,8 @@ const DEFAULTS = {
   APP_URL: "https://jornada.regenecure.com",
   WA_LANG_PT: "pt_BR",
   WA_LANG_EN: "en_US",
-  WA_TEMPLATE_JOURNEY: "jornada_pronta",
+  WA_TEMPLATE_JOURNEY: "jornada_publicada",
+  WA_TEMPLATE_JOURNEY_OLD: "jornada_pronta",
   WA_TEMPLATE_FOLLOWUP: "lembrete_followup",
   WA_TEMPLATE_OTP: "codigo_acesso",
   WA_TEMPLATE_FU_CONFIRM: "followup_confirmacao",
@@ -132,6 +133,15 @@ export function waDigits(n) {
   d = d.replace(/\+/g, "");
   return d.length >= 8 && d.length <= 15 ? d : "";
 }
+// WhatsApp ids for older Brazilian mobiles may omit the 9 after the area code; match both forms.
+export function phoneVariants(n) {
+  const d = waDigits(n);
+  if (!d) return [];
+  const out = new Set([d]);
+  if (d.startsWith("55") && d.length === 13 && d[4] === "9") out.add(d.slice(0, 4) + d.slice(5));
+  if (d.startsWith("55") && d.length === 12) out.add(d.slice(0, 4) + "9" + d.slice(4));
+  return [...out];
+}
 export const maskPhone = (n) => { const d = waDigits(n); return d ? `+${d.slice(0, 2)} ••• ••${d.slice(-4)}` : ""; };
 export const waLang = (lang) => (lang === "en" ? env("WA_LANG_EN") : env("WA_LANG_PT"));
 export const firstName = (name) => String(name || "").trim().split(/\s+/)[0] || "";
@@ -198,13 +208,16 @@ export async function logMessage(client_id, kind, template, r) {
 
 /* ---------------- Journey messages ---------------- */
 export async function sendJourney(c) {
-  return sendTemplate({
-    to: c.whatsapp, name: env("WA_TEMPLATE_JOURNEY"), lang: c.lang,
-    components: [
-      { type: "body", parameters: [{ type: "text", parameter_name: "name", text: firstName(c.name) }] },
-      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: c.access_token }] },
-    ],
-  });
+  const body = { type: "body", parameters: [{ type: "text", parameter_name: "name", text: firstName(c.name) }] };
+  const url = { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: c.access_token }] };
+  // Current template: dashboard button + quick reply "Recebi" (the reply opens the 24 h window).
+  const r = await sendTemplate({ to: c.whatsapp, name: env("WA_TEMPLATE_JOURNEY"), lang: c.lang, components: [
+    body, url, { type: "button", sub_type: "quick_reply", index: "1", parameters: [{ type: "payload", payload: "RECEBI" }] },
+  ] });
+  if (r.ok || r.error === "invalid_phone") return { ...r, template: env("WA_TEMPLATE_JOURNEY") };
+  // Fallback while the new template is not approved.
+  const r2 = await sendTemplate({ to: c.whatsapp, name: env("WA_TEMPLATE_JOURNEY_OLD"), lang: c.lang, components: [body, url] });
+  return { ...r2, template: env("WA_TEMPLATE_JOURNEY_OLD") };
 }
 export async function sendFollowup(c, n) {
   const date = (c.followup_dates || [])[n - 1];
@@ -287,13 +300,20 @@ export function localNow(tz, now = new Date()) {
 
 // FitLine link: free-form text inside the 24 h customer-service window, otherwise the marketing template.
 // The link goes through /f/<token>, which redirects to the current FitLine URL and records the click.
+export const WINDOW_MS = 24 * 3600 * 1000;
+// true / false when the Kapso webhook is configured; null when the platform cannot know.
+export function windowOpen(c) {
+  if (!process.env.KAPSO_WEBHOOK_SECRET) return null;
+  return !!c.last_inbound_at && Date.now() - Date.parse(c.last_inbound_at) < WINDOW_MS;
+}
 export async function sendFitline(c) {
   const link = `${appUrl()}/f/${c.access_token}`;
   const name = firstName(c.name);
   const text = c.lang === "en"
     ? `Hello ${name}. Here is the FitLine access recommended in your RegeneCure protocol: ${link}`
     : `Olá, ${name}. Segue o acesso FitLine indicado no seu protocolo RegeneCure: ${link}`;
-  const r = await sendText({ to: c.whatsapp, body: text });
+  // Outside the known window, free text would be rejected: go straight to the template.
+  const r = windowOpen(c) === false ? { ok: false, error: "window_closed" } : await sendText({ to: c.whatsapp, body: text });
   if (r.ok || r.error === "invalid_phone") return { ...r, via: "text" };
   const r2 = await sendTemplate({
     to: c.whatsapp, name: env("WA_TEMPLATE_FITLINE"), lang: c.lang,
@@ -316,6 +336,7 @@ export function templateDefinitions() {
       fuConfirm: "Olá, {{name}}. Seu follow-up RegeneCure está agendado para {{date}}. Confirme sua presença ou solicite outro horário pelo botão abaixo.",
       fitline: "Olá, {{name}}. Conforme o seu protocolo RegeneCure, segue o acesso aos produtos FitLine indicados para você.", btnFitline: "Acessar FitLine",
       peptide: "Olá, {{name}}. Lembrete do seu protocolo para hoje: {{doses}}. Depois de cada aplicação, registre no seu painel pelo botão abaixo.",
+      btnRecebi: "Recebi",
       btn: "Abrir meu painel", btnConfirm: "Confirmar presença", btnLog: "Registrar no painel", copy: "Copiar código", date: "13 de novembro, 10:00", doses: "BPC-157 250 mcg (ao acordar)",
     },
     en: {
@@ -324,6 +345,7 @@ export function templateDefinitions() {
       fuConfirm: "Hello {{name}}. Your RegeneCure follow-up is scheduled for {{date}}. Confirm your attendance or request another time with the button below.",
       fitline: "Hello {{name}}. As part of your RegeneCure protocol, here is access to the FitLine products recommended for you.", btnFitline: "Open FitLine",
       peptide: "Hello {{name}}. Your protocol reminder for today: {{doses}}. After each dose, log it in your dashboard with the button below.",
+      btnRecebi: "Received",
       btn: "Open my dashboard", btnConfirm: "Confirm attendance", btnLog: "Log in my dashboard", copy: "Copy code", date: "13 November, 10:00", doses: "BPC-157 250 mcg (on waking)",
     },
   };
@@ -333,7 +355,8 @@ export function templateDefinitions() {
     const button = { type: "BUTTONS", buttons: [{ type: "URL", text: s.btn, url, example: [sampleUrl] }] };
     out.push({
       lang, name: env("WA_TEMPLATE_JOURNEY"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
-      components: [{ type: "BODY", text: s.journey, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }] } }, button],
+      components: [{ type: "BODY", text: s.journey, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }] } },
+        { type: "BUTTONS", buttons: [{ type: "URL", text: s.btn, url, example: [sampleUrl] }, { type: "QUICK_REPLY", text: s.btnRecebi }] }],
     });
     out.push({
       lang, name: env("WA_TEMPLATE_FOLLOWUP"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
@@ -390,7 +413,7 @@ export async function listTemplates() {
   const text = await res.text();
   if (!res.ok) throw new HttpError(502, "kapso_error", { detail: text.slice(0, 300) });
   const j = JSON.parse(text);
-  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM"), env("WA_TEMPLATE_FITLINE")]);
+  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_JOURNEY_OLD"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM"), env("WA_TEMPLATE_FITLINE")]);
   return (j.data || []).filter((t) => wanted.has(t.name)).map((t) => ({ name: t.name, language: t.language, status: t.status, category: t.category }));
 }
 

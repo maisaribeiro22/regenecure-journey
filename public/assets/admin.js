@@ -317,10 +317,10 @@ async function openSettings(){
     <div class="row"><button class="btn sm" data-action="import">${ic('upload')}${t('importOld')}</button></div>
   </div><div class="modal-foot"><button class="btn primary" data-action="save-settings">${t('save')}</button></div>`);
   try{
-    const h = await api('health');
+    const h = await api('health'); A.health = h;
     const row = (ok, label) => `<div class="hrow"><span class="chip ${ok ? 'normal' : 'tbd'}">${ok ? t('ok') : t('missing')}</span> ${label}</div>`;
     const box = $('#healthBox');
-    if(box) box.innerHTML = row(h.supabase_secret, 'SUPABASE_SECRET_KEY') + row(h.anthropic, 'ANTHROPIC_API_KEY') + row(h.kapso_key, 'KAPSO_API_KEY') + row(h.kapso_waba, 'KAPSO_WABA_ID') + `<div class="hrow muted">APP_URL: ${esc(h.app_url)} · Phone ID: ${esc(h.kapso_phone)}</div>`;
+    if(box) box.innerHTML = row(h.supabase_secret, 'SUPABASE_SECRET_KEY') + row(h.anthropic, 'ANTHROPIC_API_KEY') + row(h.kapso_key, 'KAPSO_API_KEY') + row(h.kapso_waba, 'KAPSO_WABA_ID') + row(h.kapso_webhook, 'KAPSO_WEBHOOK_SECRET') + `<div class="hrow muted">APP_URL: ${esc(h.app_url)} · Phone ID: ${esc(h.kapso_phone)}</div>`;
   }catch(e){ const box = $('#healthBox'); if(box) box.innerHTML = `<span class="chip high">${esc(errText(e))}</span>`; }
 }
 async function saveSettings(){
@@ -563,6 +563,7 @@ async function openFitline(){
     <p class="muted" style="margin-top:0">${url ? t('fitlineHint') : t('fitlineEmpty')}</p>
     <label class="f">${t('fitlineUrlL')}<input id="flUrl" value="${esc(url)}" placeholder="https://" autocomplete="off"></label>
     ${c ? `<p class="note" style="margin-top:-4px">${wa ? t('flTo', { n:esc(c.patient.whatsapp) }) : t('needWa')}</p>` : ''}
+    ${c && wa ? `<div id="flWin" class="flwin"></div>` : ''}
     <div class="row">
       ${c ? `<button class="btn sm primary" data-action="fl-send" ${wa ? '' : 'disabled'}>${ic('send')}${t('flSendWa')}</button>` : ''}
       <button class="btn sm" data-action="fl-copy">${ic('copy')}${t('copyLink')}</button>
@@ -572,7 +573,23 @@ async function openFitline(){
     <div class="note" id="flSent">${c ? t('loading') : ''}</div>
   </div><div class="modal-foot"><button class="btn" data-action="close">${t('close')}</button></div>`);
   if(!url) setTimeout(() => $('#flUrl')?.focus(), 30);
-  if(c) loadFitlineHistory();
+  if(c){ loadFitlineHistory(); loadWindowState(); }
+}
+// 24 h WhatsApp service window: known only when the Kapso webhook is configured.
+async function loadWindowState(){
+  const c = C(); if(!c) return;
+  try{
+    if(!A.health) A.health = await api('health');
+    const box = $('#flWin'); if(!box) return;
+    if(!A.health.kapso_webhook){ box.innerHTML = `<span class="chip unknown">${t('winUnknown')}</span>`; return; }
+    const { data } = await sb.from('clients').select('last_inbound_at').eq('id', c.id).maybeSingle();
+    const last = data?.last_inbound_at ? Date.parse(data.last_inbound_at) : 0;
+    const until = last + 24 * 3600 * 1000;
+    const el = $('#flWin'); if(!el) return;
+    el.innerHTML = until > Date.now()
+      ? `<span class="chip normal">${t('winOpen', { d:fmtStamp(new Date(until).toISOString()) })}</span>`
+      : `<span class="chip tbd">${t('winClosed')}</span>${last ? ` <span class="muted">${t('winLast', { d:fmtStamp(data.last_inbound_at) })}</span>` : ''}`;
+  }catch(e){ const el = $('#flWin'); if(el) el.innerHTML = ''; }
 }
 async function loadFitlineHistory(){
   const c = C(); const box = $('#flSent'); if(!c || !box) return;
@@ -597,7 +614,7 @@ async function sendFitlineWa(btn){
     toast(t('sentOk'));
     c.fitline = { ...(c.fitline || {}), enabled:true, sentAt:new Date().toISOString() }; persist();
     const cb = $('#flVisible'); if(cb) cb.checked = true;
-    loadFitlineHistory();
+    loadFitlineHistory(); loadWindowState();
   }catch(e){ toast(errText(e), 'warn'); }
   if(btn) btn.disabled = false;
 }

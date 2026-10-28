@@ -245,3 +245,11 @@ alter table public.push_subscriptions enable row level security;
 alter table public.server_keys        enable row level security;
 revoke all on public.push_subscriptions, public.server_keys from anon, authenticated;
 grant all on public.push_subscriptions, public.server_keys to service_role;
+
+-- ---------------------------------------------------------------------
+-- v4 (Oct 2026): last client message on WhatsApp (24 h service window)
+-- ---------------------------------------------------------------------
+alter table public.clients add column if not exists last_inbound_at timestamptz;
+alter table public.clients add column if not exists wa_digits text
+  generated always as (regexp_replace(coalesce(whatsapp, ''), '[^0-9]', '', 'g')) stored;
+create index if not exists clients_wa_digits_idx on public.clients (wa_digits);
