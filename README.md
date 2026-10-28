@@ -69,6 +69,11 @@ Na plataforma: **Configurações → Criar templates no WhatsApp**. São criados
 | `lembrete_followup` | Utility | Lembrete de follow-up (manual ou automático, 1 dia antes) |
 | `codigo_acesso` | Authentication | Código de 6 dígitos para o cliente entrar |
 | `followup_confirmacao` | Utility | Lembrete automático 1 dia antes do follow-up, com botão para confirmar presença ou pedir remarcação |
+| `link_fitline` | Marketing | Link FitLine enviado pela plataforma quando o cliente não falou com você nas últimas 24 h (dentro da janela, vai como mensagem livre) |
+
+## FitLine
+
+Na ficha do cliente, **FitLine → Enviar pelo WhatsApp Business** envia o link pela plataforma. O cliente recebe `jornada.regenecure.com/f/<link pessoal>`, que redireciona para o link FitLine de Configurações; cada abertura fica registrada e aparece na janela FitLine.
 
 ## Lembretes automáticos
 

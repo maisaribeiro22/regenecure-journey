@@ -556,42 +556,61 @@ async function uploadReport(c, file){
 }
 
 /* ---------- FitLine ---------- */
-function openFitline(){
+async function openFitline(){
   const c = C(); const url = fitlineUrl();
-  const sent = c?.fitline?.sentAt ? t('sentAt', {d:fmtDate(c.fitline.sentAt.slice(0,10))}) : t('notSent');
+  const wa = c ? waDigits(c.patient.whatsapp) : '';
   openModal(`${modalHead(t('fitlineTitle'))}<div class="modal-body">
     <p class="muted" style="margin-top:0">${url ? t('fitlineHint') : t('fitlineEmpty')}</p>
     <label class="f">${t('fitlineUrlL')}<input id="flUrl" value="${esc(url)}" placeholder="https://" autocomplete="off"></label>
-    ${c ? `<label class="f">${t('waTo')} · ${t('whatsappNum')}<input id="flWa" type="tel" value="${esc(c.patient.whatsapp||'')}" placeholder="${t('waPh')}" autocomplete="off"></label>${c.patient.whatsapp ? '' : `<p class="note" style="margin-top:-4px">${t('waMissing')}</p>`}` : ''}
+    ${c ? `<p class="note" style="margin-top:-4px">${wa ? t('flTo', { n:esc(c.patient.whatsapp) }) : t('needWa')}</p>` : ''}
     <div class="row">
-      <button class="btn sm primary" data-action="fl-wa">${ic('send')}${t('whatsapp')}</button>
-      <button class="btn sm" data-action="fl-mail">${ic('send')}${t('email')}</button>
+      ${c ? `<button class="btn sm primary" data-action="fl-send" ${wa ? '' : 'disabled'}>${ic('send')}${t('flSendWa')}</button>` : ''}
       <button class="btn sm" data-action="fl-copy">${ic('copy')}${t('copyLink')}</button>
       <button class="btn sm" data-action="fl-open">${ic('link')}${t('openLink')}</button>
     </div>
     ${c ? `<label class="checkrow"><input type="checkbox" id="flVisible" ${c.fitline?.enabled ? 'checked' : ''}> ${t('fitlineVisible')}</label>` : ''}
-    <p class="note" id="flSent">${c ? sent : ''}</p>
+    <div class="note" id="flSent">${c ? t('loading') : ''}</div>
   </div><div class="modal-foot"><button class="btn" data-action="close">${t('close')}</button></div>`);
   if(!url) setTimeout(() => $('#flUrl')?.focus(), 30);
+  if(c) loadFitlineHistory();
+}
+async function loadFitlineHistory(){
+  const c = C(); const box = $('#flSent'); if(!c || !box) return;
+  const { data } = await sb.from('message_log').select('kind,ok,created_at,template').eq('client_id', c.id).in('kind', ['fitline', 'fitline_click']).order('created_at', { ascending:false }).limit(50);
+  const rows = data || [];
+  const sent = rows.find(r => r.kind === 'fitline' && r.ok), click = rows.find(r => r.kind === 'fitline_click');
+  const clicks = rows.filter(r => r.kind === 'fitline_click').length;
+  const el = $('#flSent'); if(!el) return;
+  el.innerHTML = [
+    sent ? t('flLastSent', { d:fmtStamp(sent.created_at) }) : t('notSent'),
+    click ? t('flLastClick', { d:fmtStamp(click.created_at), n:clicks }) : (sent ? t('flNoClick') : '')
+  ].filter(Boolean).join('<br>');
+}
+async function sendFitlineWa(btn){
+  const c = C(); if(!c) return;
+  const url = normUrl($('#flUrl')?.value);
+  if(!url){ toast(t('invalidUrl'), 'warn'); $('#flUrl')?.focus(); return; }
+  if(url !== APP.settings.fitlineUrl){ APP.settings.fitlineUrl = url; $('#flUrl').value = url; await saveSettingsRow({ fitline_url:url }); }
+  if(btn) btn.disabled = true;
+  try{
+    await api('send', { client_id:c.id, kind:'fitline' });
+    toast(t('sentOk'));
+    c.fitline = { ...(c.fitline || {}), enabled:true, sentAt:new Date().toISOString() }; persist();
+    const cb = $('#flVisible'); if(cb) cb.checked = true;
+    loadFitlineHistory();
+  }catch(e){ toast(errText(e), 'warn'); }
+  if(btn) btn.disabled = false;
 }
 function fitlineAction(kind){
   const url = normUrl($('#flUrl')?.value);
   if(!url){ toast(t('invalidUrl'), 'warn'); $('#flUrl')?.focus(); return; }
   if(url !== APP.settings.fitlineUrl){ APP.settings.fitlineUrl = url; $('#flUrl').value = url; saveSettingsRow({ fitline_url:url }); }
-  const c = C(); const msg = t('fitlineMsg', {name:(c?.patient.name || '').split(' ')[0], url});
   if(kind === 'open'){ window.open(url, '_blank', 'noopener'); return; }
-  if(kind === 'wa'){
-    const raw = ($('#flWa')?.value || '').trim(); const num = waDigits(raw);
-    if(raw && !num){ toast(t('waInvalid'),'warn'); $('#flWa').focus(); return; }
-    if(c && raw !== (c.patient.whatsapp||'')){ c.patient.whatsapp = raw; }
-    window.open(`https://wa.me/${num}?text=` + encodeURIComponent(msg), '_blank', 'noopener');
-  }
-  else if(kind === 'mail') window.location.href = `mailto:?subject=${encodeURIComponent(t('fitlineSubject'))}&body=${encodeURIComponent(msg)}`;
-  else if(kind === 'copy'){
-    const done = () => toast(t('copied'));
-    if(navigator.clipboard?.writeText) navigator.clipboard.writeText(msg).then(done, () => fallbackCopy(msg, done)); else fallbackCopy(msg, done);
-  }
-  if(c){ c.fitline = { ...(c.fitline || {}), enabled:true, sentAt:new Date().toISOString() }; persist(); const el = $('#flSent'); if(el) el.textContent = t('sentAt', {d:fmtDate(todayISO())}); const cb = $('#flVisible'); if(cb) cb.checked = true; }
+  const c = C();
+  const link = c ? `${location.origin}/f/${c.accessToken}` : url;
+  const msg = c ? t('fitlineMsg', { name:(c.patient.name || '').split(' ')[0], url:link }) : url;
+  const done = () => toast(t('copied'));
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(msg).then(done, () => fallbackCopy(msg, done)); else fallbackCopy(msg, done);
 }
 function fallbackCopy(txt, cb){ const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); cb(); }catch(e){} ta.remove(); }
 /* ---------- Editor ---------- */
@@ -693,8 +712,7 @@ document.addEventListener('click', e => {
     case 'rotate': rotateLink(); break;
     case 'delete-client': deleteClient(); break;
     case 'fitline': openFitline(); break;
-    case 'fl-wa': fitlineAction('wa'); break;
-    case 'fl-mail': fitlineAction('mail'); break;
+    case 'fl-send': sendFitlineWa(el); break;
     case 'fl-copy': fitlineAction('copy'); break;
     case 'fl-open': fitlineAction('open'); break;
     case 'tpl-create': templatesAction('create'); break;

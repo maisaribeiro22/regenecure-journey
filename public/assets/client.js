@@ -8,7 +8,8 @@ const PREVIEW = new URLSearchParams(location.search).has('preview');
 APP.mode = PREVIEW ? 'preview' : 'client';
 const PATH_M = location.pathname.match(/\/c\/([A-Za-z0-9_-]{16,64})(?:\.([a-z]+))?/) || [];
 const TOKEN = PATH_M[1] || '';
-const GOTO = PATH_M[2] || '';   // 'fu' → follow-up stage, 'today' → today's doses (links from WhatsApp)
+const GOTO = PATH_M[2] || '';
+if(TOKEN && !new URLSearchParams(location.search).has('preview')) APP.fitlineHref = `/f/${TOKEN}`;   // tracked redirect   // 'fu' → follow-up stage, 'today' → today's doses (links from WhatsApp)
 const browserTz = () => { try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){ return ''; } };
 const SESSION_KEY = 'regenecure.session.' + TOKEN;
 const ADMIN_AUTH_KEY = 'sb-gfdiwphqxyimckoxuqgs-auth-token';

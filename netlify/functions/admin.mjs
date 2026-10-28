@@ -1,6 +1,6 @@
 // Practitioner-only API: sending WhatsApp templates, link rotation, setup checks.
 import {
-  handle, json, readJson, HttpError, db, enc, requireAdmin, logMessage, sendJourney, sendFollowup,
+  handle, json, readJson, HttpError, db, enc, requireAdmin, logMessage, sendJourney, sendFollowup, sendFitline,
   waDigits, env, appUrl, createTemplates, listTemplates, kapsoConfigured, randomToken,
 } from "../lib/server.mjs";
 
@@ -39,6 +39,14 @@ const ACTIONS = {
       const sent = [...new Set([...(c.reminders_sent || []), num])];
       await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { reminders_sent: sent } });
       return json({ ok: true, id: r.id });
+    }
+    if (kind === "fitline") {
+      const st = (await db("app_settings?id=eq.1&select=fitline_url"))[0];
+      if (!st?.fitline_url) throw new HttpError(409, "no_fitline_url");
+      const r = await sendFitline(c);
+      await logMessage(c.id, "fitline", r.via === "template" ? env("WA_TEMPLATE_FITLINE") : "text", r);
+      if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
+      return json({ ok: true, id: r.id, via: r.via });
     }
     throw new HttpError(400, "invalid_kind");
   },

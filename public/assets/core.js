@@ -100,7 +100,7 @@ const I18N = {
     storageError:'Não foi possível salvar no navegador.',
     whatsappNum:'WhatsApp (com código do país)', waPh:'+971 50 123 4567', waTo:'Enviar para', waMissing:'Cadastre o WhatsApp do cliente para abrir a conversa direto. Sem número, você escolhe o contato no WhatsApp.', waInvalid:'Número inválido. Use o código do país, ex.: +55 62 99999-9999.',
     shop:'Supplement shop', fitline:'FitLine', links:'Links do cliente', shopUrlL:'Link da loja de suplementos', fitlineUrlL:'Link FitLine',
-    fitlineTitle:'Enviar link FitLine', fitlineEmpty:'Cole o link FitLine que será enviado ao cliente. Ele fica salvo para os próximos envios.', fitlineHint:'O mesmo link vale para todos os clientes; altere quando precisar.',
+    fitlineTitle:'Enviar link FitLine', fitlineEmpty:'Cole o link FitLine que será enviado ao cliente. Ele fica salvo para os próximos envios.', fitlineHint:'O mesmo link vale para todos os clientes; altere quando precisar. O cliente recebe um endereço RegeneCure que redireciona para este link.',
     openLink:'Abrir', copyLink:'Copiar link', whatsapp:'WhatsApp', email:'E-mail', copied:'Link copiado.', sentAt:'Último envio para este cliente: {d}', notSent:'Ainda não enviado para este cliente.', invalidUrl:'Informe um link válido.',
     fitlineMsg:'Olá, {name}. Segue o link FitLine indicado no seu protocolo: {url}', fitlineSubject:'Seu link FitLine — RegeneCure'
   },
@@ -168,7 +168,7 @@ const I18N = {
     storageError:'Could not save in the browser.',
     whatsappNum:'WhatsApp (with country code)', waPh:'+971 50 123 4567', waTo:'Send to', waMissing:'Add the client\'s WhatsApp to open the chat directly. Without a number, you pick the contact in WhatsApp.', waInvalid:'Invalid number. Include the country code, e.g. +971 50 123 4567.',
     shop:'Supplement shop', fitline:'FitLine', links:'Client links', shopUrlL:'Supplement shop link', fitlineUrlL:'FitLine link',
-    fitlineTitle:'Send FitLine link', fitlineEmpty:'Paste the FitLine link to send to the client. It stays saved for future sends.', fitlineHint:'The same link applies to every client; change it whenever needed.',
+    fitlineTitle:'Send FitLine link', fitlineEmpty:'Paste the FitLine link to send to the client. It stays saved for future sends.', fitlineHint:'The same link applies to every client; change it whenever needed. The client receives a RegeneCure address that redirects to this link.',
     openLink:'Open', copyLink:'Copy link', whatsapp:'WhatsApp', email:'Email', copied:'Link copied.', sentAt:'Last sent to this client: {d}', notSent:'Not yet sent to this client.', invalidUrl:'Enter a valid link.',
     fitlineMsg:'Hello {name}, here is the FitLine link recommended in your protocol: {url}', fitlineSubject:'Your FitLine link — RegeneCure'
   }
@@ -196,6 +196,7 @@ Object.assign(I18N.pt, {
   cl_wrong:'Código incorreto. Restam {n} tentativas.', cl_expired:'Código expirado. Peça um novo.', cl_tooMany:'Muitas tentativas. Tente novamente em 15 minutos.', cl_notFound:'Link inválido ou desativado. Fale com a sua profissional.',
   cl_noWa:'Não há WhatsApp cadastrado para este acesso. Fale com a sua profissional.', cl_sendFail:'Não foi possível enviar o código agora. Tente novamente em alguns minutos.', cl_logout:'Sair deste aparelho',
   cl_previewBanner:'Pré-visualização da profissional — as marcações não são salvas.', cl_report:'Baixar laudo', cl_offline:'Sem conexão. A marcação não foi salva.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
+  flSendWa:'Enviar pelo WhatsApp Business', flTo:'O link será enviado pela plataforma para o WhatsApp {n}.', flLastSent:'Último envio: {d}', flLastClick:'Cliente abriu o link: {d} ({n} acesso(s))', flNoClick:'O cliente ainda não abriu o link.', e_no_fitline_url:'Informe o link FitLine antes de enviar.',
   pepAlertTitle:'Lembrete diário dos peptídeos no WhatsApp', pepAlertDesc:'Receba uma mensagem nos dias de aplicação, no horário escolhido.', pepAlertTime:'Horário', pepAlertOn:'Ativo · {h}', pepAlertOff:'Desativado pelo cliente', pepAlertSaved:'Lembrete diário ativado para {h}.', pepAlertDisabled:'Lembrete diário desativado.',
   attAsk:'Você confirma a sua presença neste follow-up?', attConfirmBtn:'Confirmar presença', attRescheduleBtn:'Preciso remarcar', attDoneConfirmed:'Presença confirmada. Obrigado.', attDoneReschedule:'Pedido de remarcação registrado. A equipe RegeneCure entrará em contato.',
   attConfirmed:'Presença confirmada', attReschedule:'Pediu remarcação', attWaiting:'Aguardando confirmação do cliente',
@@ -222,6 +223,7 @@ Object.assign(I18N.en, {
   cl_wrong:'Incorrect code. {n} attempts left.', cl_expired:'Code expired. Request a new one.', cl_tooMany:'Too many attempts. Try again in 15 minutes.', cl_notFound:'Invalid or disabled link. Contact your practitioner.',
   cl_noWa:'No WhatsApp number is registered for this access. Contact your practitioner.', cl_sendFail:'The code could not be sent right now. Try again in a few minutes.', cl_logout:'Sign out on this device',
   cl_previewBanner:'Practitioner preview — ticks are not saved.', cl_report:'Download report', cl_offline:'No connection. The tick was not saved.', cl_byline:'RegeneCure · Dr. Maisa Ribeiro, PhD',
+  flSendWa:'Send via WhatsApp Business', flTo:'The platform will send the link to WhatsApp {n}.', flLastSent:'Last sent: {d}', flLastClick:'Client opened the link: {d} ({n} visit(s))', flNoClick:'The client has not opened the link yet.', e_no_fitline_url:'Enter the FitLine link before sending.',
   pepAlertTitle:'Daily peptide reminder on WhatsApp', pepAlertDesc:'Get a message on dosing days, at the time you choose.', pepAlertTime:'Time', pepAlertOn:'Active · {h}', pepAlertOff:'Turned off by the client', pepAlertSaved:'Daily reminder on for {h}.', pepAlertDisabled:'Daily reminder turned off.',
   attAsk:'Do you confirm your attendance at this follow-up?', attConfirmBtn:'Confirm attendance', attRescheduleBtn:'I need to reschedule', attDoneConfirmed:'Attendance confirmed. Thank you.', attDoneReschedule:'Reschedule request recorded. The RegeneCure team will contact you.',
   attConfirmed:'Attendance confirmed', attReschedule:'Asked to reschedule', attWaiting:'Waiting for the client to confirm',
@@ -769,7 +771,7 @@ function renderToday(c){
 function linksRow(c){
   let html = shopBtn();
   if(isAdmin()) html += `<button class="btn sm" data-action="fitline">${ic('send')}${t('fitline')}</button>`;
-  else if(c.fitline?.enabled && fitlineUrl()) html += `<a class="btn sm" href="${esc(fitlineUrl())}" target="_blank" rel="noopener">${ic('link')}${t('fitline')}</a>`;
+  else if(c.fitline?.enabled && fitlineUrl()) html += `<a class="btn sm" href="${esc(APP.fitlineHref || fitlineUrl())}" target="_blank" rel="noopener">${ic('link')}${t('fitline')}</a>`;
   return html;
 }
 function shopBtn(){ return `<a class="btn sm primary" href="${esc(shopUrl())}" target="_blank" rel="noopener">${ic('bag')}${t('shop')}</a>`; }

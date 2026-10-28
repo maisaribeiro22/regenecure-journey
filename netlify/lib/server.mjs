@@ -15,6 +15,7 @@ const DEFAULTS = {
   WA_TEMPLATE_OTP: "codigo_acesso",
   WA_TEMPLATE_FU_CONFIRM: "followup_confirmacao",
   WA_TEMPLATE_PEPTIDE: "lembrete_peptideo",
+  WA_TEMPLATE_FITLINE: "link_fitline",
   FOLLOWUP_REMINDER_HOUR: "10",
   VAPID_SUBJECT: "mailto:support@regenecure.com",
 };
@@ -168,6 +169,16 @@ export async function sendTemplate({ to, name, lang, components }) {
   return { ok: false, status: r.status, error: errMsg(r) };
 }
 
+export async function sendText({ to, body }) {
+  const digits = waDigits(to);
+  if (!digits) return { ok: false, error: "invalid_phone" };
+  const r = await kapsoPost(`${env("KAPSO_PHONE_NUMBER_ID")}/messages`, {
+    messaging_product: "whatsapp", to: digits, type: "text", text: { body, preview_url: true },
+  });
+  if (r.ok) return { ok: true, id: r.body?.messages?.[0]?.id || null };
+  return { ok: false, status: r.status, error: errMsg(r) };
+}
+
 export async function sendOtp({ to, lang, code }) {
   const body = { type: "body", parameters: [{ type: "text", text: code }] };
   // Meta documents sub_type "url" for copy-code buttons; Kapso documents "otp". Try both.
@@ -274,6 +285,26 @@ export function localNow(tz, now = new Date()) {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) % 24 };
 }
 
+// FitLine link: free-form text inside the 24 h customer-service window, otherwise the marketing template.
+// The link goes through /f/<token>, which redirects to the current FitLine URL and records the click.
+export async function sendFitline(c) {
+  const link = `${appUrl()}/f/${c.access_token}`;
+  const name = firstName(c.name);
+  const text = c.lang === "en"
+    ? `Hello ${name}. Here is the FitLine access recommended in your RegeneCure protocol: ${link}`
+    : `Olá, ${name}. Segue o acesso FitLine indicado no seu protocolo RegeneCure: ${link}`;
+  const r = await sendText({ to: c.whatsapp, body: text });
+  if (r.ok || r.error === "invalid_phone") return { ...r, via: "text" };
+  const r2 = await sendTemplate({
+    to: c.whatsapp, name: env("WA_TEMPLATE_FITLINE"), lang: c.lang,
+    components: [
+      { type: "body", parameters: [{ type: "text", parameter_name: "name", text: name }] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: c.access_token }] },
+    ],
+  });
+  return { ...r2, via: "template", textError: r.error };
+}
+
 /* ---------------- Templates (shared by sending and creation) ---------------- */
 export function templateDefinitions() {
   const url = `${appUrl()}/c/{{1}}`;
@@ -283,6 +314,7 @@ export function templateDefinitions() {
       journey: "Olá, {{name}}. Seu protocolo RegeneCure foi publicado no seu painel pessoal, com suplementos, peptídeos e datas de follow-up. Acesse pelo botão abaixo.",
       followup: "Olá, {{name}}. Lembrete: seu follow-up RegeneCure está agendado para {{date}}. Os detalhes do protocolo estão no seu painel.",
       fuConfirm: "Olá, {{name}}. Seu follow-up RegeneCure está agendado para {{date}}. Confirme sua presença ou solicite outro horário pelo botão abaixo.",
+      fitline: "Olá, {{name}}. Conforme o seu protocolo RegeneCure, segue o acesso aos produtos FitLine indicados para você.", btnFitline: "Acessar FitLine",
       peptide: "Olá, {{name}}. Lembrete do seu protocolo para hoje: {{doses}}. Depois de cada aplicação, registre no seu painel pelo botão abaixo.",
       btn: "Abrir meu painel", btnConfirm: "Confirmar presença", btnLog: "Registrar no painel", copy: "Copiar código", date: "13 de novembro, 10:00", doses: "BPC-157 250 mcg (ao acordar)",
     },
@@ -290,6 +322,7 @@ export function templateDefinitions() {
       journey: "Hello {{name}}. Your RegeneCure protocol has been published to your personal dashboard, including supplements, peptides and follow-up dates. Open it with the button below.",
       followup: "Hello {{name}}. Reminder: your RegeneCure follow-up is scheduled for {{date}}. Your protocol details are in your dashboard.",
       fuConfirm: "Hello {{name}}. Your RegeneCure follow-up is scheduled for {{date}}. Confirm your attendance or request another time with the button below.",
+      fitline: "Hello {{name}}. As part of your RegeneCure protocol, here is access to the FitLine products recommended for you.", btnFitline: "Open FitLine",
       peptide: "Hello {{name}}. Your protocol reminder for today: {{doses}}. After each dose, log it in your dashboard with the button below.",
       btn: "Open my dashboard", btnConfirm: "Confirm attendance", btnLog: "Log in my dashboard", copy: "Copy code", date: "13 November, 10:00", doses: "BPC-157 250 mcg (on waking)",
     },
@@ -310,6 +343,11 @@ export function templateDefinitions() {
     out.push({
       lang, name: env("WA_TEMPLATE_FU_CONFIRM"), category: "UTILITY", language: waLang(lang), parameter_format: "NAMED",
       components: [{ type: "BODY", text: s.fuConfirm, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }, { param_name: "date", example: s.date }] } }, btnWith(s.btnConfirm)],
+    });
+    out.push({
+      lang, name: env("WA_TEMPLATE_FITLINE"), category: "MARKETING", language: waLang(lang), parameter_format: "NAMED",
+      components: [{ type: "BODY", text: s.fitline, example: { body_text_named_params: [{ param_name: "name", example: "Ana" }] } },
+        { type: "BUTTONS", buttons: [{ type: "URL", text: s.btnFitline, url: `${appUrl()}/f/{{1}}`, example: [`${appUrl()}/f/AbCdEf123456`] }] }],
     });
     out.push({
       lang, name: env("WA_TEMPLATE_OTP"), category: "AUTHENTICATION", language: waLang(lang),
@@ -352,7 +390,7 @@ export async function listTemplates() {
   const text = await res.text();
   if (!res.ok) throw new HttpError(502, "kapso_error", { detail: text.slice(0, 300) });
   const j = JSON.parse(text);
-  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM")]);
+  const wanted = new Set([env("WA_TEMPLATE_JOURNEY"), env("WA_TEMPLATE_FOLLOWUP"), env("WA_TEMPLATE_OTP"), env("WA_TEMPLATE_FU_CONFIRM"), env("WA_TEMPLATE_FITLINE")]);
   return (j.data || []).filter((t) => wanted.has(t.name)).map((t) => ({ name: t.name, language: t.language, status: t.status, category: t.category }));
 }
 
