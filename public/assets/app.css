@@ -331,3 +331,8 @@ details.menu summary::-webkit-details-marker{display:none}
 .linkbtn:disabled{opacity:.5;cursor:not-allowed}
 .ios-steps{margin:0;padding-left:20px;display:grid;gap:10px;font-size:14px}
 .flwin{margin:-2px 0 12px;font-size:12.5px;line-height:1.6}.flwin .chip{white-space:normal}
+
+/* How-to video */
+.modal:has(.guide){max-width:440px}
+.guide-body{padding:14px 16px 6px}
+.guide video{display:block;width:100%;max-height:68vh;aspect-ratio:9/16;object-fit:contain;background:#fff;border-radius:12px;border:1px solid var(--line)}

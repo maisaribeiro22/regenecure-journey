@@ -73,7 +73,7 @@ const I18N = {
     followups:'Follow-ups', fuEvery:'Agendados a cada 30 dias a partir do início da jornada.',
     fuN:'Follow-up {n}', fuTime:'Horário', addCal:'Baixar convite (.ics)', gcal:'Google Agenda', markDone:'Marcar como realizado', undo:'Desfazer', done:'Realizado', allIcs:'Baixar todos (.ics)',
     confirmAgenda:'Confirmar agenda', fuNotes:'Orientações do laudo para o follow-up',
-    todayPanel:'Doses do dia', noDoses:'Nenhuma dose programada para este dia.', lockedToday:'As doses aparecem aqui depois que os dados do laudo forem confirmados.',
+    todayPanel:'Doses do dia', guideBtn:'Como usar', guideTitle:'Como usar seu painel', guideSkip:'Pular', guideNote:'Vídeo em inglês.', noDoses:'Nenhuma dose programada para este dia.', lockedToday:'As doses aparecem aqui depois que os dados do laudo forem confirmados.',
     futureDay:'Dia futuro — o registro abre na data.', dayComplete:'Dia completo', supp:'Suplemento', pep:'Peptídeo', of:'de',
     // editor
     editorTitle:'Revisão dos dados extraídos', editorSub:'Corrija o que for necessário. Tudo o que for salvo aqui alimenta as 4 etapas.',
@@ -143,7 +143,7 @@ const I18N = {
     followups:'Follow-ups', fuEvery:'Scheduled every 30 days from the journey start.',
     fuN:'Follow-up {n}', fuTime:'Time', addCal:'Download invite (.ics)', gcal:'Google Calendar', markDone:'Mark as completed', undo:'Undo', done:'Completed', allIcs:'Download all (.ics)',
     confirmAgenda:'Confirm schedule', fuNotes:'Follow-up guidance from the report',
-    todayPanel:'Doses for the day', noDoses:'No doses scheduled for this day.', lockedToday:'Doses appear here once the report data is confirmed.',
+    todayPanel:'Doses for the day', guideBtn:'How to use', guideTitle:'How to use your dashboard', guideSkip:'Skip', guideNote:'', noDoses:'No doses scheduled for this day.', lockedToday:'Doses appear here once the report data is confirmed.',
     futureDay:'Future day — logging opens on the date.', dayComplete:'Day completed', supp:'Supplement', pep:'Peptide', of:'of',
     editorTitle:'Review extracted data', editorSub:'Correct anything needed. Everything saved here feeds the 4 stages.',
     save:'Save and confirm', cancel:'Cancel', close:'Close', add:'Add', remove:'Remove',
@@ -234,6 +234,7 @@ Object.assign(I18N.en, {
 
 /* ---------- Icons ---------- */
 const IC = {
+  play:'<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
   upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
   pill:'<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
   syringe:'<path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/>',

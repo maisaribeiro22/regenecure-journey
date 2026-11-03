@@ -55,7 +55,8 @@ async function load(){
       try{ history.replaceState(null, '', `/c/${TOKEN}${location.search}`); }catch(e){}
       setTimeout(() => (GOTO === 'fu' ? $('#attendance') || $('#stagePanel') : $('.today'))?.scrollIntoView({ behavior:'smooth', block:'center' }), 300);
     }
-    if(canWrite()) setTimeout(afterChange, 600);
+    if(!PREVIEW && !GOTO && !guideSeen()){ CL.afterGuide = canWrite(); setTimeout(() => openGuide(true), 500); }
+    else if(canWrite()) setTimeout(afterChange, 600);
   }catch(e){
     if(e.status === 401 && !PREVIEW){ setSession(''); CL.view = 'login'; CL.step = 'start'; CL.error = ''; return renderClient(); }
     CL.view = 'error'; CL.error = e.status === 404 ? t('cl_notFound') : e.code === 'network' ? t('cl_offline') : t('cl_sendFail');
@@ -90,12 +91,26 @@ async function verifyCode(){
   CL.busy = false; renderClient();
   setTimeout(() => $('#clCode')?.focus(), 30);
 }
+/* ---------- How-to video: once per device on first entry, then from the top bar ---------- */
+const GUIDE_KEY = 'regenecure.guideSeen';
+function guideSeen(){ try{ return localStorage.getItem(GUIDE_KEY) === '1'; }catch(e){ return true; } }
+function openGuide(auto){
+  try{ localStorage.setItem(GUIDE_KEY, '1'); }catch(e){}
+  openModal(`<div class="guide">${modalHead(t('guideTitle'))}
+    <div class="guide-body"><video id="guideVid" src="/assets/guide-en.mp4" poster="/assets/guide-en.jpg" controls playsinline preload="metadata" ${auto ? 'autoplay muted' : 'autoplay'}></video>
+    ${t('guideNote') ? `<p class="note" style="margin:10px 0 0">${t('guideNote')}</p>` : ''}</div>
+    <div class="modal-foot"><button class="btn ${auto ? '' : 'primary'}" data-action="close">${auto ? t('guideSkip') : t('close')}</button></div></div>`);
+  const v = $('#guideVid'); if(v){ v.play?.().catch(() => {}); v.addEventListener('ended', () => setTimeout(closeGuideIfOpen, 600)); }
+}
+function closeGuideIfOpen(){ if($('#guideVid')) { closeModal(); afterGuideClosed(); } }
+function afterGuideClosed(){ if(CL.afterGuide){ CL.afterGuide = false; setTimeout(afterChange, 300); } }
 async function logout(){ try{ await api('logout', {}); }catch(e){} setSession(''); APP.client = null; CL.view = 'login'; CL.step = 'start'; renderClient(); }
 
 /* ---------- Render ---------- */
 function renderTop(){
   const el = $('#topActions'); if(!el) return;
-  el.innerHTML = `<button class="tb-btn" data-action="lang">${APP.lang === 'pt' ? 'EN' : 'PT'}</button>` +
+  el.innerHTML = (CL.view === 'journey' ? `<button class="tb-btn" data-action="guide" title="${t('guideBtn')}">${ic('play')}<span>${t('guideBtn')}</span></button>` : '') +
+    `<button class="tb-btn" data-action="lang">${APP.lang === 'pt' ? 'EN' : 'PT'}</button>` +
     (CL.view === 'journey' && !PREVIEW ? `<button class="tb-btn" data-action="logout" title="${t('cl_logout')}" aria-label="${t('cl_logout')}">${ic('logout')}</button>` : '');
 }
 function renderClient(){
@@ -231,14 +246,15 @@ document.addEventListener('input', e => { if(e.target.id === 'clCode'){ const v 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]'); if(!el) return;
   const a = el.dataset.action; const c = C();
-  if(a === 'overlay'){ if(e.target === el) closeModal(); return; }
+  if(a === 'overlay'){ if(e.target === el){ const g = !!$('#guideVid'); closeModal(); if(g) afterGuideClosed(); } return; }
   if(a === 'gcal'){ setTimeout(() => confirmStage(4, null), 300); return; }
   e.preventDefault();
   switch(a){
     case 'lang': setLang(APP.lang === 'pt' ? 'en' : 'pt'); renderClient(); break;
     case 'logout': logout(); break;
     case 'request-code': requestCode(); break;
-    case 'close': closeModal(); break;
+    case 'close': { const g = !!$('#guideVid'); closeModal(); if(g) afterGuideClosed(); break; }
+    case 'guide': openGuide(false); break;
     case 'stage': ui.stage = +el.dataset.n; renderClient(); break;
     case 'day': { const d = +el.dataset.d; ui.day = d === 0 ? todayISO() : addDays(ui.day, d); renderClient(); break; }
     case 'confirm': confirmStage(+el.dataset.n, el); break;

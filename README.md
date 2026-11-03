@@ -106,6 +106,10 @@ Projetos criados antes destas versões: rode, no SQL Editor, `supabase/migration
 
 Se preferir criar no painel do Kapso: categoria e nomes iguais aos da tabela, parâmetros nomeados `{{name}}` e `{{date}}`, botão de URL `https://jornada.regenecure.com/c/{{1}}`. Textos em `netlify/lib/server.mjs` → `templateDefinitions()`.
 
+## Vídeo de instruções
+
+O cliente vê o vídeo `public/assets/guide-en.mp4` (inglês, 65 s, vertical) automaticamente no primeiro acesso de cada aparelho, logo após entrar com o código; o vídeo começa sem som e pode ser pulado. Depois, o botão **How to use / Como usar** no topo do painel abre o vídeo de novo, com som. Para trocar o vídeo, substitua o arquivo (e a capa `guide-en.jpg`) mantendo os nomes.
+
 ## Fluxo de uso
 
 1. **Novo cliente** → nome, WhatsApp com código do país, idioma.
