@@ -4,5 +4,8 @@
   "description": "RegeneCure client journey platform",
   "dependencies": {
     "web-push": "3.6.7"
+  },
+  "scripts": {
+    "test": "node --test tests/"
   }
 }

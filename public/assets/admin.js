@@ -11,8 +11,8 @@ const sb = window.supabase.createClient(SB_URL, SB_KEY, { auth:{ persistSession:
 const EXTRACT_KEY = 'regenecure.extractMode';
 try{ const m = localStorage.getItem(EXTRACT_KEY); if(m === 'local' || m === 'server') APP.settings.extractMode = m; }catch(e){}
 
-Object.assign(I18N.pt, { editClient:'Editar dados do cliente', loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
-Object.assign(I18N.en, { editClient:'Edit client details', loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
+Object.assign(I18N.pt, { errRefusal:'A IA recusou processar este documento. Tente o modo local ou outro arquivo.', saveNoRows:'Nada foi salvo: o registro não foi encontrado ou você não tem permissão. Recarregue e entre novamente.', saved:'Salvo', editClient:'Editar dados do cliente',loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
+Object.assign(I18N.en, { errRefusal:'The AI declined to process this document. Try local mode or another file.', saveNoRows:'Nothing was saved: the record was not found or you lack permission. Reload and sign in again.', saved:'Saved', editClient:'Edit client details',loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
 
 const A = { view:'loading', user:null, rows:[], activity:{}, search:'', loginError:'', health:null, tpl:null, busyAction:'' };
 
@@ -72,14 +72,21 @@ async function loadClient(id){
   return rowToClient(data, await fetchChecks(id));
 }
 let saveChain = Promise.resolve();
+// Resolves to true only when Supabase confirms the row was written. An UPDATE blocked by
+// RLS (expired session, not an admin) returns no error and zero rows, so check the rows too.
 function persist(){
-  const c = C(); if(!c) return Promise.resolve();
-  const row = clientToRow(c);
-  saveChain = saveChain.then(async () => {
-    const { error } = await sb.from('clients').update(row).eq('id', c.id);
-    if(error){ console.error(error); toast(t('saveErr'), 'warn'); }
+  const c = C(); if(!c) return Promise.resolve(false);
+  const row = clientToRow(c), id = c.id;
+  const run = saveChain.then(async () => {
+    try{
+      const { data, error } = await sb.from('clients').update(row).eq('id', id).select('id');
+      if(error){ console.error('save failed', error.code || '', error.message || ''); toast(t('saveErr'), 'warn'); return false; }
+      if(!data || !data.length){ console.error('save failed: 0 rows updated'); toast(t('saveNoRows'), 'warn'); return false; }
+      return true;
+    }catch(e){ console.error('save failed', e?.message || e); toast(t('saveErr'), 'warn'); return false; }
   });
-  return saveChain;
+  saveChain = run.catch(() => false);
+  return run;
 }
 async function refreshClientMeta(){
   const c = C(); if(!c) return;
@@ -373,24 +380,22 @@ class ExtractError extends Error{ constructor(kind, msg){ super(msg); this.kind 
 
 async function readStream(resp){
   const reader = resp.body.getReader(); const dec = new TextDecoder();
-  let buf = '', json = '', err = null, stop = null;
+  const parser = createExtractionParser(n => setProgress(`${t('extracting')} · ${n} ${t('chars')}`));
   for(;;){
     const {value, done} = await reader.read(); if(done) break;
-    buf += dec.decode(value, {stream:true}).replace(/\r\n/g, '\n');
-    let i;
-    while((i = buf.indexOf('\n\n')) >= 0){
-      const raw = buf.slice(0, i); buf = buf.slice(i + 2);
-      const data = raw.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('');
-      if(!data) continue; let ev; try{ ev = JSON.parse(data); }catch(e){ continue; }
-      if(ev.type === 'content_block_delta' && ev.delta?.type === 'input_json_delta'){ json += ev.delta.partial_json; setProgress(`${t('extracting')} · ${json.length} ${t('chars')}`); }
-      else if(ev.type === 'message_delta') stop = ev.delta?.stop_reason;
-      else if(ev.type === 'error') err = ev.error?.message || 'stream error';
-    }
+    parser.push(dec.decode(value, {stream:true}));
   }
-  if(err) throw new ExtractError('generic', t('errGeneric', {s:err}));
-  if(stop === 'max_tokens') throw new ExtractError('generic', t('errTrunc'));
-  if(!json) throw new ExtractError('generic', t('errEmpty'));
-  try{ return JSON.parse(json); }catch(e){ throw new ExtractError('generic', t('errTrunc')); }
+  parser.push(dec.decode());
+  const r = parser.finish();
+  if(r.ok){
+    const d = r.data;
+    if(!d.biomarkers.length && !d.supplements.length && !d.peptides.length && !d.patient?.name && !d.report?.summary) throw new ExtractError('generic', t('errEmpty'));
+    return d;
+  }
+  if(r.reason === 'error') throw new ExtractError('generic', t('errGeneric', {s:r.message}));
+  if(r.reason === 'truncated') throw new ExtractError('generic', t('errTrunc'));
+  if(r.reason === 'refusal') throw new ExtractError('generic', t('errRefusal'));
+  throw new ExtractError('generic', t('errEmpty'));
 }
 
 async function aiExtract(file){
@@ -536,7 +541,10 @@ async function handleFile(file, mode, forceLocal){
     setProgress(t('sending'));
     const path = await uploadReport(c, file);
     c.report.storagePaths = [...prevPaths, ...(path ? [path] : [])];
-    ui.busy = false; await persist(); renderAdmin(); openEditor();
+    const saved = await persist();
+    ui.busy = false;
+    if(!saved){ ui.error = t('saveNoRows'); ui.errorKind = 'generic'; }
+    renderAdmin(); openEditor();
   }catch(e){
     ui.busy = false; ui.error = e.message || String(e); ui.errorKind = e.kind || 'generic'; renderAdmin();
   }
@@ -669,7 +677,7 @@ function renderEditor(){
 }
 function setPath(obj, path, val){ const ks = path.split('.'); let o = obj; for(let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length-1]] = val; }
 function getPath(obj, path){ return path.split('.').reduce((o, k) => o?.[k], obj); }
-function editorSave(){
+async function editorSave(){
   const c = C(), d = editorDraft; if(!c || !d) return;
   if(d.patient.whatsapp && !waDigits(d.patient.whatsapp)){ toast(t('waInvalid'),'warn'); document.querySelector('[data-ed="patient.whatsapp"]')?.focus(); return; }
   const hasContent = !!c.report || d.supplements.some(x => x.name.trim()) || d.peptides.some(x => x.name.trim()) || d.biomarkers.some(x => x.name.trim());
@@ -681,7 +689,8 @@ function editorSave(){
   const wasConfirmed = c.confirmed.s1; c.confirmed.s1 = wasConfirmed || hasContent;
   closeModal();
   if(!wasConfirmed && c.confirmed.s1) ui.stage = 2;
-  persist(); renderAdmin();
+  renderAdmin();
+  if(await persist()){ ui.error = null; toast(t('saved')); renderAdmin(); }
 }
 
 /* ---------- Events ---------- */

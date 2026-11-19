@@ -167,7 +167,9 @@ export default async (req) => {
     stream: true,
     system: SYSTEM,
     tools: [TOOL],
-    tool_choice: { type: "auto" },
+    // Force the structured tool call: with "auto" the model may answer in prose, which leaves
+    // the browser with no tool input to parse ("nothing extracted").
+    tool_choice: { type: "tool", name: "record_journey", disable_parallel_tool_use: true },
     messages: [
       {
         role: "user",
@@ -183,12 +185,18 @@ export default async (req) => {
   });
 
   if (!upstream.ok) {
-    const detail = (await upstream.text()).slice(0, 600);
+    // Only the API's error type/message is returned; it never echoes the document or the key.
+    let detail = "";
+    try {
+      const j = JSON.parse(await upstream.text());
+      detail = `${j?.error?.type || ""}: ${j?.error?.message || ""}`.slice(0, 300);
+    } catch (_) {}
+    console.error("extract upstream_error", upstream.status);
     return json({ error: "upstream_error", status: upstream.status, detail }, 502);
   }
 
   return new Response(upstream.body, {
-    headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+    headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" },
   });
 };
 
