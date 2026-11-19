@@ -13,6 +13,8 @@ try{ const m = localStorage.getItem(EXTRACT_KEY); if(m === 'local' || m === 'ser
 
 Object.assign(I18N.pt, { errRefusal:'A IA recusou processar este documento. Tente o modo local ou outro arquivo.', saveNoRows:'Nada foi salvo: o registro não foi encontrado ou você não tem permissão. Recarregue e entre novamente.', saved:'Salvo', editClient:'Editar dados do cliente',loginUnconfirmed:'E-mail ainda não confirmado no Supabase. Em Authentication → Users, confirme o usuário ou recrie-o com Auto Confirm User.', errAuth:'Sessão expirada ou sem permissão. Entre novamente.' });
 Object.assign(I18N.en, { errRefusal:'The AI declined to process this document. Try local mode or another file.', saveNoRows:'Nothing was saved: the record was not found or you lack permission. Reload and sign in again.', saved:'Saved', editClient:'Edit client details',loginUnconfirmed:'Email not confirmed in Supabase. In Authentication → Users, confirm the user or recreate it with Auto Confirm User.', errAuth:'Session expired or no permission. Sign in again.' });
+Object.assign(I18N.pt, { msTitle:'Envio manual necessário', msWhy:'A Meta não permite que a sua conta do WhatsApp Business, registrada fora do Brasil, envie mensagens automáticas para números +55. A jornada foi publicada; envie o acesso pelo seu WhatsApp.', msStep1:'Envie o link do painel pelo seu WhatsApp (abre o aplicativo com a mensagem pronta).', msSendLink:'Enviar link pelo meu WhatsApp', msStep2:'Gere um código de acesso e envie também. O cliente toca em "Já tenho um código" no painel.', msGenCode:'Gerar código de acesso', msSendCode:'Enviar código pelo meu WhatsApp', msCodeTitle:'Código de acesso manual', msCodeValid:'Válido por {h} horas, uso único.', msNote:'Sempre que o cliente precisar entrar em um aparelho novo, gere outro código no menu da ficha: Código de acesso manual.' });
+Object.assign(I18N.en, { msTitle:'Manual sending needed', msWhy:'Meta does not allow your WhatsApp Business account, registered outside Brazil, to send automated messages to +55 numbers. The journey has been published; send the access from your own WhatsApp.', msStep1:'Send the dashboard link from your WhatsApp (opens the app with the message ready).', msSendLink:'Send link from my WhatsApp', msStep2:'Generate an access code and send it too. The client taps "I already have a code" on the dashboard.', msGenCode:'Generate access code', msSendCode:'Send code from my WhatsApp', msCodeTitle:'Manual access code', msCodeValid:'Valid for {h} hours, single use.', msNote:'Whenever the client needs to sign in on a new device, generate another code from the client menu: Manual access code.' });
 
 const A = { view:'loading', user:null, rows:[], activity:{}, search:'', loginError:'', health:null, tpl:null, busyAction:'' };
 
@@ -233,6 +235,7 @@ function renderAdminBar(c){
       <details class="menu"><summary class="btn sm" aria-label="more">•••</summary><div class="menu-pop">
         ${draft ? `<button data-action="publish-only" ${c.confirmed.s1 ? '' : 'disabled'}>${t('publishOnly')}</button>` : `<button data-action="unpublish">${t('unpublish')}</button>`}
         <button data-action="editor">${ic('edit')}${t('editClient')}</button>
+        <button data-action="manual-code">${ic('lock')}${t('msCodeTitle')}</button>
         <button data-action="rotate">${ic('refresh')}${t('rotate')}</button>
         <button data-action="delete-client" class="danger">${ic('trash')}${t('deleteClient')}</button>
       </div></details>
@@ -245,9 +248,39 @@ const clientLink = c => `${location.origin}/c/${c.accessToken}`;
 async function sendJourney(){
   const c = C(); if(!c) return;
   A.busyAction = 'send'; renderAdmin();
-  try{ await persist(); await api('send', { client_id:c.id, kind:'journey' }); toast(t('sentOk')); await refreshClientMeta(); }
-  catch(e){ toast(errText(e), 'warn'); }
+  let manual = null;
+  try{
+    await persist();
+    const r = await api('send', { client_id:c.id, kind:'journey' });
+    if(r.restricted) manual = r; else toast(t('sentOk'));
+    await refreshClientMeta();
+  }catch(e){ toast(errText(e), 'warn'); }
   A.busyAction = ''; renderAdmin();
+  if(manual) openManualSend(manual);
+}
+/* Meta blocks Business API messages from this account to some countries (error 130497, Brazil +55).
+   The practitioner sends the link and an access code from her own WhatsApp instead. */
+function openManualSend(m){
+  const c = C(); if(!c) return;
+  openModal(`${modalHead(t('msTitle'))}<div class="modal-body">
+    <div class="alert warn" style="margin:0 0 14px">${t('msWhy')}</div>
+    <p style="margin:0 0 10px"><b>1.</b> ${t('msStep1')}</p>
+    ${m.wa_url ? `<a class="btn primary" href="${esc(m.wa_url)}" target="_blank" rel="noopener">${ic('send')}${t('msSendLink')}</a>` : ''}
+    <p style="margin:18px 0 10px"><b>2.</b> ${t('msStep2')}</p>
+    <div id="msCode"><button class="btn" data-action="manual-code">${ic('lock')}${t('msGenCode')}</button></div>
+    <p class="note" style="margin-top:16px">${t('msNote')}</p></div>
+    <div class="modal-foot"><button class="btn" data-action="close">${t('close')}</button></div>`);
+}
+async function manualCode(){
+  const c = C(); if(!c) return;
+  const box = $('#msCode');
+  try{
+    const r = await api('manual-code', { client_id:c.id });
+    const html = `<div class="ms-code">${esc(r.code)}</div><p class="note" style="margin:4px 0 10px">${t('msCodeValid', { h:r.hours })}</p>
+      <a class="btn primary" href="${esc(r.wa_url)}" target="_blank" rel="noopener">${ic('send')}${t('msSendCode')}</a>`;
+    if(box) box.innerHTML = html;
+    else openModal(`${modalHead(t('msCodeTitle'))}<div class="modal-body">${html}</div><div class="modal-foot"><button class="btn" data-action="close">${t('close')}</button></div>`);
+  }catch(e){ toast(errText(e), 'warn'); }
 }
 async function sendFollowupReminder(n){
   const c = C(); if(!c) return;
@@ -736,6 +769,7 @@ document.addEventListener('click', e => {
     case 'copy-link': copyText(clientLink(c), t('linkCopied')); break;
     case 'preview': window.open(`/c/${c.accessToken}?preview=1`, '_blank', 'noopener'); break;
     case 'rotate': rotateLink(); break;
+    case 'manual-code': manualCode(); break;
     case 'delete-client': deleteClient(); break;
     case 'fitline': openFitline(); break;
     case 'fl-send': sendFitlineWa(el); break;

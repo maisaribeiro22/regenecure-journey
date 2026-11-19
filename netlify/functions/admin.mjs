@@ -2,6 +2,7 @@
 import {
   handle, json, readJson, HttpError, db, enc, requireAdmin, logMessage, sendJourney, sendFollowup, sendFitline,
   waDigits, env, appUrl, createTemplates, listTemplates, kapsoConfigured, randomToken,
+  isCountryRestricted, manualMessage, randomCode, hashSecret,
 } from "../lib/server.mjs";
 
 const COLS = "id,name,whatsapp,lang,status,access_token,data,followup_dates,reminders_sent,published_at,last_inbound_at";
@@ -24,9 +25,12 @@ const ACTIONS = {
       if (!c.data?.s1Confirmed) throw new HttpError(409, "not_reviewed");
       const r = await sendJourney(c);
       await logMessage(c.id, "journey", r.template || env("WA_TEMPLATE_JOURNEY"), r);
-      if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
+      const restricted = isCountryRestricted(r);
+      if (!r.ok && !restricted) throw new HttpError(502, "send_failed", { detail: r.error });
       const now = new Date().toISOString();
-      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { status: "published", published_at: c.published_at || now, last_sent_at: now } });
+      // Country-restricted numbers (Brazil): publish anyway so the practitioner can send the link herself.
+      await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { status: "published", published_at: c.published_at || now, ...(r.ok ? { last_sent_at: now } : {}) } });
+      if (restricted) return json({ ok: false, restricted: true, ...manualMessage(c, "journey") });
       return json({ ok: true, id: r.id, sent_at: now });
     }
     if (kind === "followup") {
@@ -35,6 +39,7 @@ const ACTIONS = {
       if (c.status !== "published") throw new HttpError(409, "not_published");
       const r = await sendFollowup(c, num);
       await logMessage(c.id, "followup", r.template || env("WA_TEMPLATE_FOLLOWUP"), r);
+      if (isCountryRestricted(r)) throw new HttpError(502, "country_restricted");
       if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
       const sent = [...new Set([...(c.reminders_sent || []), num])];
       await db(`clients?id=eq.${c.id}`, { method: "PATCH", prefer: "return=minimal", body: { reminders_sent: sent } });
@@ -45,10 +50,23 @@ const ACTIONS = {
       if (!st?.fitline_url) throw new HttpError(409, "no_fitline_url");
       const r = await sendFitline(c);
       await logMessage(c.id, "fitline", r.via === "template" ? env("WA_TEMPLATE_FITLINE") : "text", r);
+      if (isCountryRestricted(r)) throw new HttpError(502, "country_restricted");
       if (!r.ok) throw new HttpError(502, "send_failed", { detail: r.error });
       return json({ ok: true, id: r.id, via: r.via });
     }
     throw new HttpError(400, "invalid_kind");
+  },
+
+  // POST {client_id} → access code the practitioner sends herself (for numbers the Business API cannot reach)
+  async "manual-code"(req) {
+    const { client_id } = await readJson(req);
+    const c = await loadClient(client_id);
+    if (c.status !== "published") throw new HttpError(409, "not_published");
+    const hours = 12, code = randomCode();
+    await db("otp_codes", { method: "POST", prefer: "return=minimal", body: {
+      client_id: c.id, code_hash: hashSecret(`${c.id}:${code}`, "otp"), expires_at: new Date(Date.now() + hours * 3600000).toISOString(),
+    } });
+    return json({ ok: true, code, hours, ...manualMessage(c, "code", { code, hours }) });
   },
 
   // POST {client_id} → new link; old link and all client sessions stop working
@@ -80,7 +98,7 @@ const ACTIONS = {
   async "templates-status"() { return json({ ok: true, templates: await listTemplates() }); },
 };
 
-const METHODS = { send: "POST", "rotate-link": "POST", health: "GET", "templates-create": "POST", "templates-status": "GET" };
+const METHODS = { send: "POST", "manual-code": "POST", "rotate-link": "POST", health: "GET", "templates-create": "POST", "templates-status": "GET" };
 
 export default handle(async (req, context) => {
   const action = context?.params?.action || new URL(req.url).pathname.split("/").pop();

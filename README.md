@@ -93,6 +93,10 @@ Configuração (uma vez):
 
 Sem o webhook, a plataforma continua funcionando como antes: tenta a mensagem livre e, se a Meta recusar, envia o template.
 
+## Números do Brasil (+55)
+
+Desde set/2025 a Meta bloqueia mensagens da API do WhatsApp Business de contas registradas fora do Brasil para números +55 (erro 130497). A plataforma reconhece esse erro: publica a jornada mesmo assim e abre **Envio manual necessário**, com o link e um código de acesso de 12 h para enviar pelo seu WhatsApp. O cliente toca em **Já tenho um código**. Para gerar outro código depois: menu da ficha → **Código de acesso manual**. No webhook do Kapso, marque também o evento **Message failed** para registrar falhas que a Meta informa depois do envio.
+
 ## Lembretes automáticos
 
 Uma função roda a cada hora e usa o fuso horário de cada cliente (capturado do celular dele; padrão Brasília para português e Dubai para inglês):

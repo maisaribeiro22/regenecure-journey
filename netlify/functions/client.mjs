@@ -3,6 +3,7 @@
 import {
   handle, json, readJson, HttpError, db, dbAll, enc, hashSecret, randomToken, randomCode, safeEqual,
   sendOtp, logMessage, maskPhone, waDigits, requireAdmin, signedReportUrl, todayUTC, kapsoConfigured, validTz,
+  isCountryRestricted,
 } from "../lib/server.mjs";
 import { getVapid, validSubscription, countDevices, pushToClient } from "../lib/push.mjs";
 
@@ -40,15 +41,20 @@ const ACTIONS = {
     if (!waDigits(c.whatsapp)) throw new HttpError(409, "no_whatsapp");
     if (!kapsoConfigured()) throw new HttpError(503, "whatsapp_not_configured");
     const since = new Date(Date.now() - 15 * 60000).toISOString();
-    const recent = await db(`otp_codes?client_id=eq.${c.id}&created_at=gt.${enc(since)}&select=created_at&order=created_at.desc`);
+    // Rate limits count only WhatsApp codes (10 min); manual codes from the practitioner last hours.
+    const shortLived = new Date(Date.now() + (CODE_MINUTES + 1) * 60000).toISOString();
+    const recent = await db(`otp_codes?client_id=eq.${c.id}&created_at=gt.${enc(since)}&expires_at=lt.${enc(shortLived)}&select=created_at&order=created_at.desc`);
     if (recent.length >= 4) throw new HttpError(429, "too_many_codes", { retry_after: 900 });
     if (recent[0] && Date.now() - new Date(recent[0].created_at).getTime() < 45000) throw new HttpError(429, "wait", { retry_after: 45 });
     const code = randomCode();
-    await db("otp_codes", { method: "POST", prefer: "return=minimal", body: {
+    const [otpRow] = await db("otp_codes", { method: "POST", prefer: "return=representation", body: {
       client_id: c.id, code_hash: hashSecret(`${c.id}:${code}`, "otp"), expires_at: new Date(Date.now() + CODE_MINUTES * 60000).toISOString(),
     } });
     const r = await sendOtp({ to: c.whatsapp, lang: c.lang, code });
     await logMessage(c.id, "otp", "otp", r);
+    // A code that never left must not count against the limits or block a manual code.
+    if (!r.ok && otpRow?.id) await db(`otp_codes?id=eq.${otpRow.id}`, { method: "DELETE", prefer: "return=minimal" }).catch(() => {});
+    if (isCountryRestricted(r)) throw new HttpError(502, "country_restricted");
     if (!r.ok) throw new HttpError(502, "send_failed");
     return json({ ok: true, to: maskPhone(c.whatsapp), minutes: CODE_MINUTES });
   },
@@ -59,11 +65,13 @@ const ACTIONS = {
     const c = await clientByToken(token);
     if (!/^\d{6}$/.test(String(code || ""))) throw new HttpError(400, "invalid_code");
     const nowIso = new Date().toISOString();
-    const rows = await db(`otp_codes?client_id=eq.${c.id}&used=is.false&expires_at=gt.${enc(nowIso)}&select=id,code_hash,attempts&order=created_at.desc&limit=1`);
-    const otp = rows[0];
-    if (!otp) throw new HttpError(401, "code_expired");
+    // Any valid code counts: the latest WhatsApp code or a manual code from the practitioner.
+    const rows = await db(`otp_codes?client_id=eq.${c.id}&used=is.false&expires_at=gt.${enc(nowIso)}&select=id,code_hash,attempts&order=created_at.desc&limit=5`);
+    if (!rows.length) throw new HttpError(401, "code_expired");
+    const wanted = hashSecret(`${c.id}:${code}`, "otp");
+    const otp = rows.find((r) => r.attempts < MAX_ATTEMPTS && safeEqual(r.code_hash, wanted)) || rows[0];
     if (otp.attempts >= MAX_ATTEMPTS) throw new HttpError(429, "too_many_attempts");
-    if (!safeEqual(otp.code_hash, hashSecret(`${c.id}:${code}`, "otp"))) {
+    if (!safeEqual(otp.code_hash, wanted)) {
       await db(`otp_codes?id=eq.${otp.id}`, { method: "PATCH", prefer: "return=minimal", body: { attempts: otp.attempts + 1 } });
       throw new HttpError(401, "wrong_code", { left: Math.max(0, MAX_ATTEMPTS - otp.attempts - 1) });
     }

@@ -336,3 +336,5 @@ details.menu summary::-webkit-details-marker{display:none}
 .modal:has(.guide){max-width:440px}
 .guide-body{padding:14px 16px 6px}
 .guide video{display:block;width:100%;max-height:68vh;aspect-ratio:9/16;object-fit:contain;background:#fff;border-radius:12px;border:1px solid var(--line)}
+
+.ms-code{font-family:var(--mono, monospace);font-size:34px;letter-spacing:.28em;font-weight:600;color:var(--navy, #060E8C);padding:6px 0}

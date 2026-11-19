@@ -163,7 +163,26 @@ async function kapsoPost(path, payload, timeoutMs = 8000) {
   let j = null; try { j = JSON.parse(text); } catch {}
   return { ok: res.ok, status: res.status, body: j, raw: text };
 }
-const errMsg = (r) => (r.body?.error?.message || r.body?.error || r.raw || `HTTP ${r.status}`).toString().slice(0, 300);
+const errMsg = (r) => {
+  const e = r.body?.error;
+  const code = e?.code ? `(#${e.code}) ` : "";
+  const msg = (e?.error_data?.details || e?.message || (typeof e === "string" ? e : "") || r.raw || `HTTP ${r.status}`).toString();
+  return (msg.startsWith("(#") ? msg : code + msg).slice(0, 300);
+};
+// Meta error 130497: the WhatsApp Business Account may not message users in this country.
+// Since Sep 2025 Meta applies it to businesses based outside Brazil (and Indonesia) messaging +55 (+62) numbers.
+export const isCountryRestricted = (r) => !!r && !r.ok && (/130497/.test(String(r.error || "")) || /restricted from messaging/i.test(String(r.error || "")));
+
+// Message the practitioner can send from her own WhatsApp app (wa.me) when the Business API cannot deliver.
+export function manualMessage(c, kind, extra = {}) {
+  const pt = c.lang !== "en", name = firstName(c.name), link = `${appUrl()}/c/${c.access_token}`;
+  const text = kind === "code"
+    ? (pt ? `Olá, ${name}. Seu código de acesso ao painel RegeneCure é ${extra.code}. Ele vale por ${extra.hours} horas.\n\nPainel: ${link}`
+          : `Hello ${name}. Your RegeneCure dashboard access code is ${extra.code}. It is valid for ${extra.hours} hours.\n\nDashboard: ${link}`)
+    : (pt ? `Olá, ${name}. Seu protocolo RegeneCure foi publicado no seu painel pessoal, com suplementos, peptídeos e datas de follow-up.\n\nAcesse aqui: ${link}\n\nAo abrir, toque em "Já tenho um código" e use o código que vou te enviar.`
+          : `Hello ${name}. Your RegeneCure protocol has been published to your personal dashboard, including supplements, peptides and follow-up dates.\n\nOpen it here: ${link}\n\nWhen it opens, tap "I already have a code" and use the code I will send you.`);
+  return { text, wa_url: `https://wa.me/${waDigits(c.whatsapp)}?text=${encodeURIComponent(text)}` };
+}
 
 export async function sendTemplate({ to, name, lang, components }) {
   const digits = waDigits(to);

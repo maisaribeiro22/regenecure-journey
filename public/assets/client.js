@@ -72,8 +72,9 @@ async function requestCode(){
     const r = await api('request-code', { token:TOKEN });
     CL.step = 'code'; CL.to = r.to; CL.minutes = r.minutes || 10; CL.cooldown = Date.now() + 45000;
   }catch(e){
-    CL.error = e.status === 404 ? t('cl_notFound') : e.code === 'no_whatsapp' ? t('cl_noWa') : e.code === 'wait' ? t('cl_wait') : e.code === 'too_many_codes' ? t('cl_tooMany') : t('cl_sendFail');
+    CL.error = e.status === 404 ? t('cl_notFound') : e.code === 'no_whatsapp' ? t('cl_noWa') : e.code === 'wait' ? t('cl_wait') : e.code === 'too_many_codes' ? t('cl_tooMany') : e.code === 'country_restricted' ? '' : t('cl_sendFail');
     if(e.code === 'wait' && CL.to) CL.step = 'code';
+    if(e.code === 'country_restricted'){ CL.step = 'code'; CL.to = ''; CL.notice = t('cl_restricted'); }
   }
   CL.busy = false; renderClient();
   if(CL.step === 'code') setTimeout(() => $('#clCode')?.focus(), 30);
@@ -131,9 +132,11 @@ function renderLogin(){
   if(CL.step === 'start'){
     return `<div class="card login">${head}<p class="muted">${t('cl_intro')}</p>${err}
       <button class="btn primary" style="width:100%" data-action="request-code" ${CL.busy ? 'disabled' : ''}>${CL.busy ? `<span class="spin sm"></span>` : ic('send')}${t('cl_send')}</button>
+      <p style="text-align:center;margin:14px 0 0"><a href="#" data-action="have-code">${t('cl_haveCode')}</a></p>
       <p class="muted" style="font-size:12px;margin-top:16px">${t('cl_byline')}</p></div>`;
   }
-  return `<form class="card login" id="codeForm">${head}<p class="muted">${t('cl_codeSent', { to:esc(CL.to), m:CL.minutes })}</p>
+  const intro = CL.notice ? `<div class="alert info" style="margin:0 0 12px">${esc(CL.notice)}</div>` : CL.to ? `<p class="muted">${t('cl_codeSent', { to:esc(CL.to), m:CL.minutes })}</p>` : `<p class="muted">${t('cl_codeManual')}</p>`;
+  return `<form class="card login" id="codeForm">${head}${intro}
     <label class="f">${t('cl_code')}<input id="clCode" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••"></label>
     ${err}
     <button class="btn primary" type="submit" style="width:100%" ${CL.busy ? 'disabled' : ''}>${CL.busy ? `<span class="spin sm"></span>` : ''}${t('cl_enter')}</button>
@@ -252,7 +255,8 @@ document.addEventListener('click', e => {
   switch(a){
     case 'lang': setLang(APP.lang === 'pt' ? 'en' : 'pt'); renderClient(); break;
     case 'logout': logout(); break;
-    case 'request-code': requestCode(); break;
+    case 'request-code': CL.notice = ''; requestCode(); break;
+    case 'have-code': CL.step = 'code'; CL.to = ''; CL.notice = ''; CL.error = ''; renderClient(); setTimeout(() => $('#clCode')?.focus(), 30); break;
     case 'close': { const g = !!$('#guideVid'); closeModal(); if(g) afterGuideClosed(); break; }
     case 'guide': openGuide(false); break;
     case 'stage': ui.stage = +el.dataset.n; renderClient(); break;

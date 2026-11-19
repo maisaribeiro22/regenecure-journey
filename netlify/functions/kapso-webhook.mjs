@@ -43,6 +43,27 @@ function inbound(payload, isReceivedEvent) {
   return found.filter((x) => x.phone && (!x.id || (!ids.has(x.id) && ids.add(x.id))));
 }
 
+// Failed outbound messages: {id, error} from Kapso v2 (message.kapso.statuses / errors) or Meta statuses[].
+function failures(payload) {
+  const out = [], seen = new Set();
+  const errText = (o) => {
+    const e = (o?.errors || o?.kapso?.errors || o?.kapso?.statuses?.find?.((x) => x.errors)?.errors || [])[0] || o?.error;
+    if (!e) return "failed";
+    return `(#${e.code ?? "?"}) ${e.error_data?.details || e.message || e.title || "failed"}`;
+  };
+  const visit = (o) => {
+    if (!o || typeof o !== "object" || seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) return o.forEach(visit);
+    if (o.message?.id) out.push({ id: o.message.id, error: errText(o.message) });
+    if (Array.isArray(o.statuses)) for (const st of o.statuses) if (st.id && st.status === "failed") out.push({ id: st.id, error: errText(st) });
+    Object.values(o).forEach(visit);
+  };
+  visit(payload);
+  const ids = new Set();
+  return out.filter((x) => !ids.has(x.id) && ids.add(x.id));
+}
+
 export default async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const secret = process.env.KAPSO_WEBHOOK_SECRET;
@@ -56,6 +77,15 @@ export default async (req) => {
   let payload; try { payload = JSON.parse(raw); } catch { return json({ error: "invalid_json" }, 400); }
 
   let matched = 0;
+  // Delivery failures reported after the API accepted the message (e.g. Meta error 130497 for +55 numbers).
+  if (event === "whatsapp.message.failed") {
+    const failed = failures(payload);
+    for (const f of failed) {
+      await db(`message_log?wa_message_id=eq.${enc(f.id)}`, { method: "PATCH", prefer: "return=minimal", body: { ok: false, error: f.error.slice(0, 300) } });
+    }
+    console.log(`kapso webhook: failed messages=${failed.length}`);
+    return json({ ok: true, failed: failed.length });
+  }
   const msgs = inbound(payload, event === "whatsapp.message.received");
   for (const m of msgs) {
     const variants = phoneVariants(m.phone);
