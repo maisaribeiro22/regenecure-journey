@@ -45,6 +45,23 @@ test('reports empty when the model answered in prose only', () => {
   assert.deepEqual(r, { ok: false, reason: 'empty' });
 });
 
+test('falls back to JSON written as text when no tool call was made', () => {
+  const txt = 'Here is the record:\n```json\n' + JSON.stringify(SAMPLE) + '\n```';
+  const r = run([sse({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }) + sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: txt } }) + stop('end_turn')]);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.supplements[0].name, 'Magnesium');
+  // Unrelated JSON in prose is not accepted as a record.
+  const r2 = run([sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Sorry {"note":"x"}' } }) + stop('end_turn')]);
+  assert.equal(r2.reason, 'empty');
+});
+
+test('ignores thinking deltas', () => {
+  const s = JSON.stringify(SAMPLE);
+  const r = run([sse({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }) + sse({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '{"biomarkers":' } }) + toolStart(1) + jsonDelta(1, s) + stop('tool_use')]);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.biomarkers.length, 1);
+});
+
 test('reports truncation and stream errors', () => {
   assert.equal(run([toolStart(0) + jsonDelta(0, '{"biomarkers":[') + stop('max_tokens')]).reason, 'truncated');
   assert.equal(run([toolStart(0) + jsonDelta(0, '{"biomarkers":[')]).reason, 'truncated');

@@ -167,9 +167,10 @@ export default async (req) => {
     stream: true,
     system: SYSTEM,
     tools: [TOOL],
-    // Force the structured tool call: with "auto" the model may answer in prose, which leaves
-    // the browser with no tool input to parse ("nothing extracted").
-    tool_choice: { type: "tool", name: "record_journey", disable_parallel_tool_use: true },
+    // The production model rejects forced tool_choice ("tool"/"any"), so keep "auto" and steer it
+    // through the prompt. If it still answers with the JSON as text, the browser parser
+    // (assets/extract-stream.js) falls back to that text.
+    tool_choice: { type: "auto" },
     messages: [
       {
         role: "user",

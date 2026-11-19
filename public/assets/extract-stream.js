@@ -66,11 +66,29 @@
         if(st.json.trim()){
           try{ input = JSON.parse(st.json); }catch(e){ return { ok:false, reason:'truncated' }; }
         } else if(st.toolInput) input = st.toolInput;
+        else if(st.text) input = jsonFromText(st.text);
         if(!input || typeof input !== 'object') return { ok:false, reason:'empty' };
         return { ok:true, data:coerceExtraction(input) };
       },
       state:st
     };
+  }
+
+  // Fallback when the model wrote the record as text (optionally in a ```json fence)
+  // instead of calling the tool. Only accepts an object that looks like a journey record.
+  function jsonFromText(text){
+    const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+    const candidates = [];
+    if(fence) candidates.push(fence[1]);
+    const a = text.indexOf('{'), b = text.lastIndexOf('}');
+    if(a >= 0 && b > a) candidates.push(text.slice(a, b + 1));
+    for(const s of candidates){
+      try{
+        const o = JSON.parse(s.trim());
+        if(o && typeof o === 'object' && !Array.isArray(o) && ['biomarkers', 'supplements', 'peptides', 'patient'].some(k => k in o)) return o;
+      }catch(e){}
+    }
+    return null;
   }
 
   // Models occasionally return nested arrays/objects as JSON strings; normalise them.
